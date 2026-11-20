@@ -22,7 +22,7 @@ Se non c'è una CLI, la **modalità in chat** (`passo.py`) usa i sotto-agenti de
 ## Installazione
 
 ```bash
-git clone https://github.com/<utente>/book-translate-lite.git
+git clone https://github.com/NT0wers84/book-translate-lite.git
 cd book-translate-lite && ./install.sh
 ```
 
