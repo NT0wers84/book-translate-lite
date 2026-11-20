@@ -1,125 +1,150 @@
 # book-translate-lite
 
-Una skill per **Claude Code** e **Codex** che traduce un libro intero (EPUB, PDF, DOCX o Markdown) **dall'inizio alla fine**, con **revisione finale** e libro pronto in EPUB, DOCX e PDF. È progettata per consumare pochi token.
-
-*An agent skill (Claude Code / Codex) that translates a whole book end to end — chunking, parallel translation, automatic checks, a final review pass and EPUB/DOCX/PDF output — with an orchestrator that is a script, not a model. Docs are in Italian.*
+An agent skill for **Claude Code** and **Codex** that translates a whole book (EPUB, PDF, DOCX or Markdown) **into any language, from start to finish**. It runs a **final review pass** and produces a ready EPUB, DOCX and PDF. It is designed to use as few tokens as possible.
 
 ```
-libro.epub ─ init ─▶ parti ─▶ traduzione a gruppi ─▶ controlli ─▶ revisione ─▶ EPUB · DOCX · PDF
-                              (motore in parallelo)   (script)    (motore)     + RAPPORTO_FINALE.md
+book.epub ─ init ─▶ parts ─▶ translation in groups ─▶ checks ─▶ review ─▶ EPUB · DOCX · PDF
+                             (engine, in parallel)    (scripts)  (engine)    + FINAL_REPORT.md
 ```
 
-## Perché
+## Why
 
-Con le skill di traduzione classiche, il costo lo fa soprattutto l'**orchestratore**: una conversazione lunga che a ogni chiamata rimanda centinaia di migliaia di token. Qui ci sono tre accorgimenti:
+With typical translation skills, most of the cost comes from the **orchestrator**: a long conversation that resends hundreds of thousands of tokens on every call. This skill avoids that in three ways:
 
-1. **L'orchestratore è uno script** (`auto.py`). Ogni gruppo di 3 parti è *una* chiamata non interattiva al modello (`codex exec` o `claude -p`) con un task autosufficiente. Il modello non deve usare strumenti: risponde con i blocchi tradotti, e lo script li salva e li verifica.
-2. **Task minimi.** Ogni task contiene solo le regole, i termini del glossario presenti in quelle parti, i nomi ricorrenti ancora senza resa e la coda della parte precedente per la continuità.
-3. **I controlli e le correzioni meccaniche li fanno gli script**, non il modello. Gli script verificano paragrafi, Markdown, termini e regole vietate, e correggono apostrofi, virgolette, `...`→`…` e altre sostituzioni di progetto.
+1. **The orchestrator is a script** (`auto.py`). Each group of 3 parts is *one* non-interactive model call (`codex exec` or `claude -p`) with a self-contained task. The model needs no tools: it answers with the translated blocks, and the script saves and checks them.
+2. **Minimal tasks.** Each task contains only:
+   - the rules;
+   - the glossary terms that occur in those parts;
+   - recurring names that have no translation yet;
+   - the end of the previous part, for continuity.
+3. **Scripts, not the model, do the checks and mechanical fixes.**
+   - Checks: paragraphs, Markdown, terms and forbidden forms.
+   - Fixes: apostrophes, quote punctuation, `...` → `…` and per-project replacements.
 
-Se non c'è una CLI, la **modalità in chat** (`passo.py`) usa i sotto-agenti dell'app: l'orchestratore lancia solo un comando che gli dice cosa fare dopo.
+Without a CLI, the **in-chat mode** (`step.py`) uses the app's sub-agents. The orchestrator only runs one command that tells it what to do next.
 
-## Installazione
+## Install
 
 ```bash
 git clone https://github.com/NT0wers84/book-translate-lite.git
 cd book-translate-lite && ./install.sh
 ```
 
-`install.sh` crea i link simbolici in `~/.claude/skills/` e `~/.codex/skills/`.
+`install.sh` symlinks the skill into `~/.claude/skills/` and `~/.codex/skills/`.
 
-Requisiti:
+Requirements:
 
-- Python 3.9+, [pandoc](https://pandoc.org) 3.x e [Calibre](https://calibre-ebook.com), per la conversione e per il PDF;
-- per la modalità automatica, la CLI di [Codex](https://github.com/openai/codex) oppure quella di [Claude Code](https://docs.anthropic.com/claude-code).
+- Python 3.9+, [pandoc](https://pandoc.org) 3.x and [Calibre](https://calibre-ebook.com) (conversion and PDF);
+- for the automatic mode, the [Codex](https://github.com/openai/codex) or [Claude Code](https://docs.anthropic.com/claude-code) CLI.
 
-## Uso rapido
+## Quick start
 
 ```bash
 S=~/.claude/skills/book-translate-lite/scripts
-python3 $S/init.py "Il mio libro.epub" --lang it
-cd "Il mio libro_temp"
-# facoltativo: titolo tradotto in progetto.json, nomi fissi in glossario.json, stile in regole.md
-python3 $S/auto.py --sfondo            # parte e va avanti da solo fino al libro finito
-python3 $S/auto.py --stato             # a che punto è
+python3 $S/init.py "My Book.epub" --to fr          # target language: any code (it, fr, de, es, ja, …)
+cd "My Book_temp"
+# optional: translated title in project.json, fixed names in terms.json, style notes in rules.md
+python3 $S/auto.py --background                     # runs on its own until the book is done
+python3 $S/auto.py --status                         # progress
 ```
 
-Il risultato finisce in `libro/<titolo>.epub|docx|pdf`. Il resoconto è in `revisione/RAPPORTO_FINALE.md`.
+The result goes to `book/<title>.epub|docx|pdf`, and the summary to `review/FINAL_REPORT.md`.
 
-### Prompt di avvio per un agente (Codex o Claude)
+### Prompt for an agent (Codex or Claude)
 
-> Usa la skill book-translate-lite per tradurre `<percorso>/libro.epub` in italiano. Prepara il progetto con `init.py`, imposta il titolo tradotto, poi avvia la modalità automatica in background e dimmi come seguirla. Se la CLI non c'è, usa la modalità in chat e vai avanti fino a «FINITO».
+> Use the book-translate-lite skill to translate `<path>/book.epub` into French. Set up the project with `init.py`, set the translated title, then start the automatic mode in the background and tell me how to follow it. If no CLI is available, use the in-chat mode and keep going until "FINISHED".
 
-Per riprendere un lavoro già avviato:
+To resume a job:
 
-> Usa la skill book-translate-lite in `<percorso>/<libro>_temp` e porta la traduzione fino alla fine.
+> Use the book-translate-lite skill in `<path>/<book>_temp` and take the translation to the end.
 
-## Le fasi
+## Languages
 
-| fase | cosa succede | file |
+`--to` accepts any language code: the model translates into it.
+
+Some languages have a **profile**:
+
+- typography in `templates/languages.json`;
+- publishing conventions in `templates/rules/<code>.md`.
+
+| profile | language | quotes | extra |
+|---|---|---|---|
+| `it` | Italian | «» | full stop and comma outside quotes, `Okay`→`Ok`, `...`→`…`, *passato remoto* |
+| `fr` | French | «» | non-breaking spaces, *passé simple*, `...`→`…` |
+| `es` | Spanish | «» | dialogue with raya, ¿ ¡, `...`→`…` |
+| `de` | German | „“ | Präteritum, consistent du/Sie, `...`→`…` |
+| `en` | English | “” | US spelling unless told otherwise |
+| `pt` `nl` `pl` `ja` `zh` `ko` | — | profile typography | generic rules |
+
+Any other code uses the generic rules. To add or improve a language, see [docs/LANGUAGES.md](docs/LANGUAGES.md). Pull requests are welcome.
+
+## Phases
+
+| phase | what happens | files |
 |---|---|---|
-| preparazione | conversione con Calibre in Markdown diviso in parti da circa 6.000 caratteri, pre-glossario dei nomi ricorrenti | `chunkNNNN.md`, `progetto.json`, `regole.md`, `glossario.json`, `preglossario.json` |
-| traduzione | gruppi di `gruppo` parti, `paralleli` alla volta. Ogni risposta è verificata; le parti respinte vengono ritradotte con l'elenco degli errori, fino a `tentativi` volte, poi accettate e segnalate | `output_chunkNNNN.md`, `.meta.json`, `stato.json`, `auto.log` |
-| glossario | dopo ogni gruppo, i termini nuovi proposti dal modello entrano come **P** (proposta). Un conflitto su un termine P cambia la resa; uno su un termine **V** (vincolante) viene solo annotato | `glossario.json`, `stato.json → conflitti_v` |
-| analisi | scansione di tutto il libro: errori di struttura, termini resi in modo diverso nelle varie parti, frasi rimaste in lingua originale, virgolette, parole ripetute | `revisione/segnalazioni.json`, `revisione/rapporto.md` |
-| revisione | il motore di revisione (anche diverso, per esempio Claude) rilegge originale e traduzione e risponde con correzioni puntuali `@@VECCHIO@@/@@NUOVO@@`. Le correzioni che non trovano il testo o che rompono la verifica vengono scartate | `revisione/modifiche.md`, `revisione/backup/` |
-| libro | pandoc (EPUB e DOCX) e Calibre (PDF): `lang` corretto, sommario con tutti i capitoli, riquadro per i messaggi di sistema | `libro/` |
-| rapporto | che cosa resta da guardare a mano e quali termini vincolanti qualcuno vorrebbe cambiare | `revisione/RAPPORTO_FINALE.md` |
+| setup | Calibre conversion to Markdown split into parts of about 6,000 characters; recurring names collected | `chunkNNNN.md`, `project.json`, `rules.md`, `terms.json`, `candidates.json` |
+| translation | groups of `group_size` parts, `parallel` at a time. Each answer is checked; rejected parts are retranslated with the list of errors up to `retries` times, then accepted and flagged | `output_chunkNNNN.md`, `.meta.json`, `state.json`, `auto.log` |
+| glossary | after each group, new terms proposed by the model are added as **proposed**. A conflict on a proposed term changes it; a conflict on a **fixed** term is only recorded | `terms.json`, `state.json → fixed_conflicts` |
+| analysis | whole-book scan: structure errors, terms rendered differently across parts, sentences left in the source language, quotes, doubled words | `review/flags.json`, `review/report.md` |
+| review | the review engine (which can differ, for example Claude) re-reads source and translation and answers with targeted `@@OLD@@/@@NEW@@` fixes. A fix that is not found or breaks the check is rejected | `review/changes.md`, `review/backup/` |
+| book | EPUB and DOCX with pandoc, PDF with Calibre: correct `lang`, full table of contents, box for system messages | `book/` |
+| report | what is left to check by hand, and the proposed changes to fixed terms | `review/FINAL_REPORT.md` |
 
-Il valore `revisione` in `progetto.json` decide quanto rivedere: `completa` (default), `segnalate` (solo le parti con problemi) oppure `nessuna`.
+`review` in `project.json` controls how much is reviewed: `full` (default), `flagged` (only parts with problems) or `none`.
 
-## Configurazione: `progetto.json`
+## Configuration: `project.json`
 
-| chiave | default | significato |
+| key | default | meaning |
 |---|---|---|
-| `lingua`, `lingua_nome` | `it`, `italiano` | lingua di arrivo |
-| `titolo`, `autore` | dal libro | metadati del libro finale |
-| `gruppo`, `paralleli` | 3, 3 | parti per chiamata e chiamate in parallelo |
-| `tentativi` | 2 | ritraduzioni di una parte respinta |
-| `motore`, `modello`, `ragionamento` | `codex`, —, `low` | motore di traduzione |
-| `motore_revisione`, `modello_revisione`, `ragionamento_revisione` | come traduzione, —, `medium` | motore di revisione |
-| `comando_motore` | — | con `motore: "comando"`, il comando da lanciare: riceve il task su stdin e restituisce la risposta su stdout |
-| `revisione`, `gruppo_revisione` | `completa`, 3 | |
-| `virgolette`, `apostrofo_tipografico`, `punto_fuori` | `«»`, sì, sì | correzioni tipografiche automatiche |
-| `sostituzioni` | `Okay→Ok`, `...→…` | `[{"re", "con"}]`, applicate a ogni salvataggio |
-| `vietate` | — | `[{"re", "msg"}]`: forme che bloccano la parte |
-| `maiuscolo_chat` | — | nomi le cui righe `Nome: …` devono essere TUTTE MAIUSCOLE |
-| `rapporto_min`, `rapporto_max` | 0,6 / 1,9 | soglie per i paragrafi troppo corti o troppo lunghi |
-| `formati`, `timeout_minuti` | `epub,docx,pdf`, 20 | |
+| `target_lang`, `target_lang_name`, `source_lang` | from `init.py` | languages |
+| `title`, `author` | from the book | metadata of the final book |
+| `group_size`, `parallel` | 3, 3 | parts per call, calls in parallel |
+| `retries` | 2 | retranslations of a rejected part |
+| `engine`, `model`, `reasoning` | `codex`, —, `low` | translation engine |
+| `review_engine`, `review_model`, `review_reasoning` | same as translation, —, `medium` | review engine |
+| `engine_command` | — | with `engine: "command"`: any command that reads the task on stdin and prints the answer |
+| `review`, `review_group_size` | `full`, 3 | review scope |
+| `quotes`, `typographic_apostrophe`, `punct_outside_quotes` | from the language profile | automatic typography |
+| `replacements` | from the profile | `[{"re", "with"}]` applied on every save |
+| `forbidden` | — | `[{"re", "msg"}]` forms that block a part |
+| `uppercase_chat` | — | names whose `Name: …` lines must be ALL CAPS |
+| `ratio_min`, `ratio_max` | 0.6 / 1.9 | paragraph length bounds (translation/source) |
+| `formats`, `timeout_minutes` | `epub,docx,pdf`, 20 | |
 
-## Comandi
+## Commands
 
-| script | uso |
+| script | use |
 |---|---|
-| `init.py libro --lang it [--chunk-size 6000]` | crea `<libro>_temp/` accanto al libro |
-| `auto.py [--sfondo] [--stato] [--motore …] [--fino N] [--revisione …]` | modalità automatica, si può riprendere |
-| `passo.py` | modalità in chat: stampa la prossima azione fino a «FINITO» |
-| `prep.py [A B] [--rev]` · `save.py` · `patch.py` · `finish.py [A B]` | i passi singoli, a mano |
-| `check.py A [B] \| --tutte [--breve] [--fix]` | verifica, in sola lettura salvo `--fix` |
-| `revisione.py analizza \| da-fare \| finale` | analisi del libro, parti da rivedere, chiusura con build e rapporto |
-| `build.py [--titolo] [--formati] [--parziale] [--out]` | costruzione del libro |
-| `migra.py <cartella>_temp` | importa un progetto [translate-book](https://github.com/deusyu/translate-book) senza toccare le parti fatte |
+| `init.py book --to <code> [--from <code>] [--chunk-size 6000]` | creates `<book>_temp/` next to the book |
+| `auto.py [--background] [--status] [--engine …] [--until N] [--review …]` | automatic mode, resumable |
+| `step.py` | in-chat mode: prints the next action until "FINISHED" |
+| `prep.py [A B] [--review]` · `save.py` · `patch.py` · `finish.py [A B]` | single steps, by hand |
+| `check.py A [B] \| --all [--short] [--fix]` | checks, read-only unless `--fix` |
+| `review.py analyze \| todo \| final` | whole-book analysis, parts to review, closing with build and report |
+| `build.py [--title] [--formats] [--partial] [--out]` | builds the book |
+| `migrate.py <folder>_temp` | imports a [translate-book](https://github.com/deusyu/translate-book) or v1 project without touching finished parts |
 
-Formati dei blocchi e dei file: [docs/FORMATI.md](docs/FORMATI.md). Architettura e scelte: [docs/ARCHITETTURA.md](docs/ARCHITETTURA.md).
+Block and file formats are in [docs/FORMATS.md](docs/FORMATS.md); design notes are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Test
+## Tests
 
 ```bash
-python3 tests/test_completo.py
+python3 tests/test_all.py
 ```
 
-I test usano un libro di prova scritto apposta (`tests/libro_prova.md`) e un motore finto, quindi non chiamano nessun modello. Provano:
+The tests use a short book written for them (`tests/test_book.md`) and a fake engine, so no model is called. They cover:
 
-- la modalità automatica, compreso un errore da ritentare, la revisione e il libro in EPUB, DOCX e PDF;
-- la modalità in chat con sotto-agenti simulati;
-- il rifiuto delle parti incomplete;
-- la migrazione senza modifiche ai file esistenti.
+- the automatic mode, with one error to retry, the review and EPUB/DOCX/PDF output;
+- the in-chat mode with simulated sub-agents;
+- a second target language;
+- rejection of incomplete parts;
+- both migrations.
 
-## Note
+## Notes
 
-- La traduzione è per uso personale. Rispetta i diritti d'autore dei libri che traduci.
-- Ogni libro sta nella sua cartella `<libro>_temp/`, e la skill non scrive mai fuori da lì.
+- Translate only books you have the right to translate, for example for personal use or with permission.
+- Each book lives in its own `<book>_temp/` folder; the skill never writes outside it.
 
-## Licenza
+## License
 
-MIT. `scripts/vendor/convert.py` e `scripts/vendor/manifest.py`, che convertono l'input in Markdown e lo dividono in parti, vengono senza modifiche da **translate-book** © 2025 Rainman, con licenza MIT ([scripts/vendor/LICENSE-translate-book](scripts/vendor/LICENSE-translate-book)). Il resto è scritto da zero.
+MIT. `scripts/vendor/convert.py` and `scripts/vendor/manifest.py` (input conversion and splitting) are copied unchanged from **translate-book** © 2025 Rainman, MIT licence; see [scripts/vendor/LICENSE-translate-book](scripts/vendor/LICENSE-translate-book). Everything else was written from scratch.

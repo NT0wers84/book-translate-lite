@@ -1,11 +1,14 @@
 # Changelog
 
+## 2.0.0 — 2026-11-20
+
+- Everything in English: scripts, messages, prompts, docs.
+- The target language is chosen by the user (`init.py --to <code>`, `--from` for the source language).
+- Language profiles: `templates/languages.json` and `templates/rules/<code>.md` (it, fr, es, de, en; typography for pt, nl, pl, ja, zh, ko); generic rules for any other language.
+- English file and key names: `project.json`, `terms.json` (type fixed/proposed), `state.json`, `rules.md`, `candidates.json`, `review/`, `_tasks/`, `book/`.
+- Renamed scripts: `step.py` (was passo.py), `review.py` (revisione.py), `migrate.py` (migra.py); `auto.py` flags in English (`--background`, `--status`, `--engine`, `--review-engine`, `--until`).
+- `migrate.py` converts v1 projects (Italian names) to v2; markers `@@PARTE/@@VECCHIO/@@NUOVO/@@FINE` are still accepted.
+
 ## 1.0.0 — 2026-11-20
 
-- Modalità automatica `auto.py`: l'orchestratore è uno script, i motori sono `codex exec`, `claude -p` o un comando qualsiasi; esecuzione in background, stato e ripresa.
-- Modalità in chat `passo.py`: macchina a stati che porta fino a «FINITO».
-- Revisione finale: analisi di tutto il libro, correzioni puntuali `@@VECCHIO@@/@@NUOVO@@` con verifica e backup, rapporto finale.
-- Ritentativi automatici delle parti respinte, con l'elenco degli errori.
-- `build.py` con pandoc e Calibre: lingua corretta, sommario completo, CSS per i messaggi di sistema.
-- `migra.py` per i progetti translate-book.
-- Test end-to-end senza modelli.
+- Automatic mode `auto.py` (script orchestrator, `codex exec` / `claude -p` / any command), in-chat mode, final review with targeted fixes, pandoc/Calibre build, translate-book migration, end-to-end tests.

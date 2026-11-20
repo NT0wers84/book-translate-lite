@@ -1,35 +1,35 @@
 #!/usr/bin/env python3
-"""Applica le correzioni della revisione da stdin.
+"""Apply review fixes from stdin.
 
-  python3 patch.py <<'@@FINE@@'
-  @@PARTE 0012@@
-  @@VECCHIO@@
-  testo esatto da sostituire
-  @@NUOVO@@
-  testo corretto
-  @@PARTE 0013@@
+  python3 patch.py <<'@@END@@'
+  @@PART 0012@@
+  @@OLD@@
+  exact text to replace
+  @@NEW@@
+  corrected text
+  @@PART 0013@@
   @@OK@@
-  @@FINE@@
+  @@END@@
 
-Ogni correzione deve trovare il testo VECCHIO una sola volta; se rompe la verifica
-viene annullata. Il primo originale di ogni parte modificata resta in revisione/backup/.
-Le parti elencate (anche con @@OK@@) vengono segnate come rivedute.
+Each fix must find the OLD text exactly once; a fix that breaks the check is undone.
+The first original of every changed part is kept in review/backup/.
+Every listed part (including @@OK@@) is marked as reviewed.
 """
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import comune as C
-import lavoro as L
+import common as C
+import work as W
 
 
 def main():
-    d = C.trova_dir(sys.argv[sys.argv.index('--dir') + 1] if '--dir' in sys.argv else None)
-    ok, scartate, viste = L.applica_patch(d, sys.stdin.read(), C.progetto(d), C.glossario(d))
-    if not viste:
-        sys.exit('ERRORE: nessun blocco @@PARTE NNNN@@.')
-    st = C.stato(d); st['rivedute'] = sorted(set(st['rivedute']) | set(viste)); C.salva_stato(d, st)
-    print(f'correzioni applicate: {ok}; parti rivedute: ' + ', '.join(f'{n:04d}' for n in viste))
-    for n, m in scartate:
-        print(f'  scartata {n:04d}: {m}')
+    d = C.find_dir(C.arg_dir())
+    ok, rejected, seen = W.apply_patches(d, sys.stdin.read(), C.project(d), C.terms(d))
+    if not seen:
+        sys.exit('ERROR: no @@PART NNNN@@ block.')
+    st = C.state(d); st['reviewed'] = sorted(set(st['reviewed']) | set(seen)); C.save_state(d, st)
+    print(f'fixes applied: {ok}; parts reviewed: ' + ', '.join(f'{n:04d}' for n in seen))
+    for n, m in rejected:
+        print(f'  rejected {n:04d}: {m}')
 
 
 if __name__ == '__main__':

@@ -1,76 +1,78 @@
 #!/usr/bin/env python3
-"""Unisce le parti tradotte e crea EPUB, DOCX e PDF.
+"""Merge the translated parts and build EPUB, DOCX and PDF.
 
-Uso:  build.py [--titolo "Titolo tradotto"] [--formati epub,docx,pdf] [--out CARTELLA] [--cover img.jpg] [--parziale]
+Usage:  build.py [--title "Translated title"] [--formats epub,docx,pdf] [--out FOLDER]
+                 [--cover img.jpg] [--partial]
 
-- EPUB e DOCX con pandoc: lingua corretta (lang da progetto.json), sommario completo
-  (un capitolo per ogni titolo #), CSS con riquadro per i messaggi di sistema
-  (paragrafi interamente in grassetto), maiuscoletto, citazioni, note.
-- PDF con Calibre (ebook-convert) a partire dall'EPUB.
-- --parziale: costruisce anche se mancano parti (si ferma alla prima mancante).
-Uscita predefinita: <cartella di lavoro>/libro/<titolo>.<formato>
+- EPUB and DOCX with pandoc: correct language (target_lang from project.json), full table of
+  contents (one chapter per # heading), CSS with a box for system messages (paragraphs that
+  are entirely bold), small caps, quotes, notes.
+- PDF with Calibre (ebook-convert) from the EPUB.
+- --partial: build even if parts are missing (stops at the first missing one).
+Default output: <working folder>/book/<title>.<format>
 """
 import argparse, glob, os, re, shutil, subprocess, sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import comune as C
+import common as C
 
-M = os.path.join(C.SKILL, 'modelli')
 CALIBRE = [shutil.which('ebook-convert') or '', '/Applications/calibre.app/Contents/MacOS/ebook-convert',
-           '/usr/bin/ebook-convert']
+           '/usr/bin/ebook-convert', 'C:\\Program Files\\Calibre2\\ebook-convert.exe']
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--formati', default='epub,docx,pdf'); ap.add_argument('--out')
-    ap.add_argument('--cover'); ap.add_argument('--titolo'); ap.add_argument('--parziale', action='store_true'); ap.add_argument('--dir')
-    o = ap.parse_args(); d = C.trova_dir(o.dir); cfg = C.progetto(d); tot = C.n_parti(d)
-    mancanti = [n for n in range(1, tot + 1) if not C.tradotta(d, n)]
-    if mancanti and not o.parziale:
-        sys.exit(f'ERRORE: mancano {len(mancanti)} parti (prima: {mancanti[0]:04d}). Usa --parziale per una prova.')
-    fino = (mancanti[0] - 1) if mancanti else tot
-    testo = '\n\n'.join(C.leggi(C.out_path(d, n)).strip() for n in range(1, fino + 1)) + '\n'
-    md = os.path.join(d, 'libro.md')
-    open(md, 'w', encoding='utf-8').write(testo)
-    out = os.path.abspath(o.out or os.path.join(d, 'libro')); os.makedirs(out, exist_ok=True)
-    titolo = o.titolo or cfg.get('titolo') or 'Libro'; autore = cfg.get('autore') or ''
-    nome = re.sub(r'[/:\\]', '-', titolo)
+    ap.add_argument('--formats'); ap.add_argument('--out'); ap.add_argument('--title')
+    ap.add_argument('--cover'); ap.add_argument('--partial', action='store_true'); ap.add_argument('--dir')
+    o = ap.parse_args(); d = C.find_dir(o.dir); cfg = C.project(d); tot = C.n_parts(d)
+    missing = [n for n in range(1, tot + 1) if not C.translated(d, n)]
+    if missing and not o.partial:
+        sys.exit(f'ERROR: {len(missing)} parts missing (first: {missing[0]:04d}). Use --partial for a preview.')
+    upto = (missing[0] - 1) if missing else tot
+    text = '\n\n'.join(C.read(C.out_path(d, n)).strip() for n in range(1, upto + 1)) + '\n'
+    md = os.path.join(d, 'book.md')
+    C.write(md, text)
+    out = os.path.abspath(o.out or os.path.join(d, 'book')); os.makedirs(out, exist_ok=True)
+    title = o.title or cfg.get('title') or 'Book'; author = cfg.get('author') or ''
+    lang = cfg['target_lang'] or 'en'
+    name = re.sub(r'[/:\\]', '-', title)
     cover = o.cover or next(iter(sorted(glob.glob(os.path.join(d, 'images', 'cover.*')))), None)
-    base = ['pandoc', md, '-f', 'markdown', '--resource-path', d, '--lua-filter', os.path.join(M, 'sistema.lua'),
-            '-M', f'title={titolo}', '-M', f'lang={cfg["lingua"]}', '--toc', '--toc-depth=2']
-    if autore:
-        base += ['-M', f'author={autore}']
-    fatti = []
-    formati = o.formati.split(',')
-    epub = os.path.join(out, nome + '.epub')
-    if 'epub' in formati or 'pdf' in formati:
-        cmd = base + ['-o', epub, '--split-level=1', '--css', os.path.join(M, 'stile.css'),
-                      '-M', f'toc-title={"Sommario" if cfg["lingua"] == "it" else "Contents"}']
+    toc_title = cfg.get('toc_title') or C.languages().get(lang, {}).get('toc_title', 'Contents')
+    base = ['pandoc', md, '-f', 'markdown', '--resource-path', d,
+            '--lua-filter', os.path.join(C.TEMPLATES, 'system.lua'),
+            '-M', f'title={title}', '-M', f'lang={lang}', '--toc', '--toc-depth=2', '-M', f'toc-title={toc_title}']
+    if author:
+        base += ['-M', f'author={author}']
+    made = []
+    formats = (o.formats or cfg['formats']).split(',')
+    epub = os.path.join(out, name + '.epub')
+    if 'epub' in formats or 'pdf' in formats:
+        cmd = base + ['-o', epub, '--split-level=1', '--css', os.path.join(C.TEMPLATES, 'style.css')]
         if cover:
             cmd += ['--epub-cover-image', cover]
         r = subprocess.run(cmd, capture_output=True, text=True, cwd=d)
         if r.returncode:
-            sys.exit('ERRORE pandoc (epub): ' + r.stderr[-1500:])
-        fatti.append(epub)
-    if 'docx' in formati:
-        docx = os.path.join(out, nome + '.docx')
+            sys.exit('ERROR pandoc (epub): ' + r.stderr[-1500:])
+        made.append(epub)
+    if 'docx' in formats:
+        docx = os.path.join(out, name + '.docx')
         r = subprocess.run(base + ['-o', docx], capture_output=True, text=True, cwd=d)
-        print('ERRORE pandoc (docx): ' + r.stderr[-800:]) if r.returncode else fatti.append(docx)
-    if 'pdf' in formati:
+        print('ERROR pandoc (docx): ' + r.stderr[-800:]) if r.returncode else made.append(docx)
+    if 'pdf' in formats:
         cal = next((c for c in CALIBRE if c and os.path.exists(c)), None)
         if not cal:
-            print('PDF saltato: Calibre (ebook-convert) non trovato.')
+            print('PDF skipped: Calibre (ebook-convert) not found.')
         else:
-            pdf = os.path.join(out, nome + '.pdf')
+            pdf = os.path.join(out, name + '.pdf')
             r = subprocess.run([cal, epub, pdf, '--pdf-page-numbers', '--paper-size', 'a5',
                                 '--pdf-default-font-size', '12', '--pdf-page-margin-left', '50',
-                                '--pdf-page-margin-right', '50', '--language', cfg['lingua']],
+                                '--pdf-page-margin-right', '50', '--language', lang],
                                capture_output=True, text=True, timeout=1800)
-            print('ERRORE Calibre (pdf): ' + (r.stderr or r.stdout)[-800:]) if r.returncode else fatti.append(pdf)
-    if 'epub' not in formati and os.path.exists(epub):
-        os.remove(epub); fatti.remove(epub)
-    capitoli = len(re.findall(r'(?m)^# ', testo))
-    print(f'Parti 1–{fino} di {tot} · {capitoli} capitoli nel sommario · lingua {cfg["lingua"]}')
-    for f in fatti:
+            print('ERROR Calibre (pdf): ' + (r.stderr or r.stdout)[-800:]) if r.returncode else made.append(pdf)
+    if 'epub' not in formats and os.path.exists(epub):
+        os.remove(epub); made.remove(epub)
+    chapters = len(re.findall(r'(?m)^# ', text))
+    print(f'Parts 1–{upto} of {tot} · {chapters} chapters in the table of contents · language {lang}')
+    for f in made:
         print(f'  {f} ({os.path.getsize(f) // 1024} KB)')
 
 

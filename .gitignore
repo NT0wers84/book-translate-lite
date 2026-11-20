@@ -2,9 +2,8 @@ __pycache__/
 *.pyc
 .DS_Store
 tests/.artifacts/
-# lavori di traduzione: mai nel repository
+# translation jobs never go into the repository
 *_temp/
 *.epub
 *.pdf
 *.docx
-!tests/*.md

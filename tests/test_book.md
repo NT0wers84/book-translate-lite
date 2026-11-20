@@ -1,6 +1,6 @@
 ---
 title: The Clockwork Lighthouse
-author: Autore di Prova
+author: Test Author
 lang: en
 ---
 
@@ -16,7 +16,7 @@ Mira climbed the spiral stairs of the Clockwork Lighthouse for the third time th
 
 *I am never late,* Mira thought. *Everyone else is early.*
 
-![](mappa.png)
+![](map.png)
 
 She opened the logbook. The Copper Gull had left a feather on the page, and a note written in tiny, careful letters: *Meet me at the Salt Market.*
 

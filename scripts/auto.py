@@ -1,27 +1,26 @@
 #!/usr/bin/env python3
-"""Traduzione AUTOMATICA dall'inizio alla fine: traduzione → revisione → libro.
+"""AUTOMATIC translation from start to finish: translation → review → book.
 
-Uso:  auto.py [--motore codex|claude|comando] [--modello M] [--paralleli 3]
-              [--motore-revisione claude] [--revisione completa|segnalate|nessuna]
-              [--fino N] [--senza-build] [--dir CARTELLA]
-      auto.py --sfondo …   parte in background (con caffeinate su macOS) e torna subito
-      auto.py --stato      ultime righe di auto.log e stato del lavoro
+Usage:  auto.py [--engine codex|claude|command] [--model M] [--parallel 3]
+                [--review-engine claude] [--review full|flagged|none]
+                [--until N] [--no-build] [--dir FOLDER]
+        auto.py --background …   start detached (with caffeinate on macOS) and return at once
+        auto.py --status         last lines of auto.log and job status
 
-L'orchestratore è questo script: nessun modello spende token per coordinare.
-Ogni gruppo di parti è UNA chiamata al motore (task su stdin, risposta = blocchi
-@@PARTE@@), senza strumenti. Le parti respinte dal controllo vengono ritradotte
-fino a `tentativi` volte con l'elenco degli errori; poi vengono accettate e
-segnalate per la revisione, così il lavoro arriva sempre fino in fondo.
-Si può interrompere e rilanciare in qualsiasi momento: riprende da dove era.
-Registro: auto.log nella cartella di lavoro.
+The orchestrator is this script: no model spends tokens on coordination. Each group of
+parts is ONE engine call (task on stdin, answer = @@PART@@ blocks), with no tools.
+Parts rejected by the check are retranslated up to `retries` times with the list of
+errors; then they are accepted and flagged for the review, so the job always reaches
+the end. It can be stopped and restarted at any time: it resumes where it was.
+Log: auto.log in the working folder.
 """
 import argparse, concurrent.futures as CF, os, shutil, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
-import comune as C
-import lavoro as L
-import motore as M
-import revisione as R
-import task as T
+import common as C
+import engine as EN
+import review as R
+import tasks as T
+import work as W
 
 
 class Log:
@@ -29,155 +28,153 @@ class Log:
         self.p = os.path.join(d, 'auto.log')
 
     def __call__(self, msg):
-        riga = time.strftime('%Y-%m-%d %H:%M ') + msg
-        print(riga, flush=True)
+        line = time.strftime('%Y-%m-%d %H:%M ') + msg
+        print(line, flush=True)
         with open(self.p, 'a', encoding='utf-8') as f:
-            f.write(riga + '\n')
+            f.write(line + '\n')
 
 
-def traduci_gruppo(d, ids, cfg, terms, regole, log):
-    """Ritorna {n: problemi} per le parti accettate con problemi (dopo i tentativi)."""
-    problemi = None
-    for tentativo in range(1 + cfg['tentativi']):
-        path = T.traduzione(d, ids, cfg, terms, regole, modo='diretto', problemi=problemi)
-        risposta, err = M.chiama(cfg, C.leggi(path), d)
-        if err:
-            log(f'  {ids[0]:04d}-{ids[-1]:04d}: errore del motore: {err}')
-            problemi = None
-            continue
-        salvate, probs, errori = L.salva_blocchi(d, risposta, cfg, terms, attese=ids, tutto_o_niente=False)
-        manc = [n for n in ids if n not in salvate]
-        resto = sorted(set(manc) | set(probs))
-        if not resto:
-            os.remove(path)
-            return {}
-        problemi = {n: probs.get(n) or [e for e in errori if f'{n:04d}' in e] or ['parte mancante nella risposta']
-                    for n in resto}
-        log(f'  tentativo {tentativo + 1}: da rifare ' + ', '.join(f'{n:04d}' for n in resto)
-            + ' — ' + '; '.join(problemi[resto[0]])[:160])
+def translate_group(d, ids, cfg, ts, rules, log):
+    """Returns {n: problems} for parts accepted with problems (after the retries)."""
+    problems = None
+    for attempt in range(1 + cfg['retries']):
+        path = T.translation(d, ids, cfg, ts, rules, mode='direct', problems=problems)
+        answer, err = EN.call(cfg, C.read(path), d)
         os.remove(path)
-        ids = resto
-    return {n: problemi[n] for n in ids if C.tradotta(d, n)} if problemi else {}
+        if err:
+            log(f'  {ids[0]:04d}-{ids[-1]:04d}: engine error: {err}')
+            problems = None
+            continue
+        saved, probs, errors = W.save_blocks(d, answer, cfg, ts, expected=ids, all_or_nothing=False)
+        rest = sorted(set(n for n in ids if n not in saved) | set(probs))
+        if not rest:
+            return {}
+        problems = {n: probs.get(n) or [e for e in errors if f'{n:04d}' in e] or ['part missing from the answer']
+                    for n in rest}
+        log(f'  attempt {attempt + 1}: redo ' + ', '.join(f'{n:04d}' for n in rest)
+            + ' — ' + '; '.join(problems[rest[0]])[:160])
+        ids = rest
+    return {n: problems[n] for n in ids if C.translated(d, n)} if problems else {}
 
 
-def fase_traduzione(d, cfg, fino, log):
-    g, par = cfg['gruppo'], cfg['paralleli']
-    stallo = 0
+def translation_phase(d, cfg, until, log):
+    g, par = cfg['group_size'], cfg['parallel']
+    stalled = 0
     while True:
-        mancanti = [n for n in range(1, fino + 1) if not C.tradotta(d, n)]
-        if not mancanti:
+        missing = [n for n in range(1, until + 1) if not C.translated(d, n)]
+        if not missing:
             return True
-        lotto = R.gruppi(mancanti[:g * par], g)
-        terms = C.glossario(d); regole = C.leggi(os.path.join(d, 'regole.md')).strip()
+        batch = C.groups(missing[:g * par], g)
+        ts = C.terms(d); rules = C.rules(d)
         t0 = time.time()
         with CF.ThreadPoolExecutor(par) as ex:
-            ris = list(ex.map(lambda ids: traduci_gruppo(d, ids, cfg, terms, regole, log), lotto))
-        da_riv = {n: p for r in ris for n, p in r.items()}
-        st = C.stato(d)
-        L.chiudi(d, [n for gr in lotto for n in gr], st, da_rivedere=da_riv, stampa=log)
-        log(f'{lotto[0][0]:04d}-{lotto[-1][-1]:04d} in {int(time.time() - t0)} s · ' + L.riga_stato(d))
-        rimaste = [n for n in range(1, fino + 1) if not C.tradotta(d, n)]
-        stallo = stallo + 1 if len(rimaste) == len(mancanti) else 0
-        if stallo >= 2:
-            log('STOP: nessun progresso in due giri (motore non disponibile o risposte non valide). '
-                'Controlla auto.log e rilancia.')
+            res = list(ex.map(lambda ids: translate_group(d, ids, cfg, ts, rules, log), batch))
+        flagged = {n: p for r in res for n, p in r.items()}
+        W.close(d, [n for gr in batch for n in gr], C.state(d), flagged=flagged, say=log)
+        log(f'{batch[0][0]:04d}-{batch[-1][-1]:04d} in {int(time.time() - t0)} s · ' + W.status_line(d))
+        left = [n for n in range(1, until + 1) if not C.translated(d, n)]
+        stalled = stalled + 1 if len(left) == len(missing) else 0
+        if stalled >= 2:
+            log('STOP: no progress in two rounds (engine unavailable or invalid answers). '
+                'Check auto.log and run again.')
             return False
 
 
-def rivedi_gruppo(d, ids, cfg, terms, regole, seg, log):
-    for tentativo in range(2):
-        path = T.revisione(d, ids, cfg, terms, regole, seg, modo='diretto')
-        risposta, err = M.chiama(cfg, C.leggi(path), d, revisione=True)
+def review_group(d, ids, cfg, ts, rules, flags, log):
+    for _ in range(2):
+        path = T.review(d, ids, cfg, ts, rules, flags, mode='direct')
+        answer, err = EN.call(cfg, C.read(path), d, review=True)
         os.remove(path)
         if err:
-            log(f'  revisione {ids[0]:04d}-{ids[-1]:04d}: errore del motore: {err}'); continue
-        ok, scartate, viste = L.applica_patch(d, risposta, cfg, terms)
-        if viste:
-            for n, m in scartate[:5]:
-                log(f'  scartata {n:04d}: {m}')
-            return [n for n in viste if n in ids], ok
-        log(f'  revisione {ids[0]:04d}-{ids[-1]:04d}: risposta senza blocchi @@PARTE@@')
+            log(f'  review {ids[0]:04d}-{ids[-1]:04d}: engine error: {err}'); continue
+        ok, rejected, seen = W.apply_patches(d, answer, cfg, ts)
+        if seen:
+            for n, m in rejected[:5]:
+                log(f'  rejected {n:04d}: {m}')
+            return [n for n in seen if n in ids], ok
+        log(f'  review {ids[0]:04d}-{ids[-1]:04d}: answer without @@PART@@ blocks')
     return [], 0
 
 
-def fase_revisione(d, cfg, log):
-    if cfg['revisione'] == 'nessuna':
+def review_phase(d, cfg, log):
+    if cfg['review'] == 'none':
         return
-    seg = R.analizza(d, log)
-    stallo = 0
+    flags = R.analyze(d, log)
+    stalled = 0
     while True:
-        ids = R.da_fare(d)
+        ids = R.todo(d)
         if not ids:
             return
-        lotto = R.gruppi(ids, cfg['gruppo_revisione'])[:cfg['paralleli']]
-        terms = C.glossario(d); regole = C.leggi(os.path.join(d, 'regole.md')).strip()
-        with CF.ThreadPoolExecutor(cfg['paralleli']) as ex:
-            ris = list(ex.map(lambda g: rivedi_gruppo(d, g, cfg, terms, regole, seg, log), lotto))
-        st = C.stato(d)
-        viste = [n for v, _ in ris for n in v]
-        st['rivedute'] = sorted(set(st['rivedute']) | set(viste)); C.salva_stato(d, st)
-        log(f'revisione {lotto[0][0]:04d}-{lotto[-1][-1]:04d}: {sum(k for _, k in ris)} correzioni · '
-            f'rivedute {len(st["rivedute"])}, da fare {len(R.da_fare(d))}')
-        stallo = 0 if viste else stallo + 1
-        if stallo >= 2:
-            log('STOP revisione: nessun progresso in due giri. Rilancia auto.py per riprendere.'); return
+        batch = C.groups(ids, cfg['review_group_size'])[:cfg['parallel']]
+        ts = C.terms(d); rules = C.rules(d)
+        with CF.ThreadPoolExecutor(cfg['parallel']) as ex:
+            res = list(ex.map(lambda g: review_group(d, g, cfg, ts, rules, flags, log), batch))
+        st = C.state(d)
+        seen = [n for v, _ in res for n in v]
+        st['reviewed'] = sorted(set(st['reviewed']) | set(seen)); C.save_state(d, st)
+        log(f'review {batch[0][0]:04d}-{batch[-1][-1]:04d}: {sum(k for _, k in res)} fixes · '
+            f'reviewed {len(st["reviewed"])}, to do {len(R.todo(d))}')
+        stalled = 0 if seen else stalled + 1
+        if stalled >= 2:
+            log('STOP review: no progress in two rounds. Run auto.py again to resume.'); return
 
 
-def _vivo(pid):
+def alive(pid):
     try:
         os.kill(pid, 0); return pid > 0
     except OSError:
         return False
 
 
+def running_pid(d):
+    p = os.path.join(d, 'auto.pid')
+    if os.path.exists(p):
+        pid = int(C.read(p).strip() or 0)
+        if pid != os.getpid() and alive(pid):
+            return pid
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--motore'); ap.add_argument('--modello'); ap.add_argument('--paralleli', type=int)
-    ap.add_argument('--motore-revisione'); ap.add_argument('--modello-revisione')
-    ap.add_argument('--revisione', choices=['completa', 'segnalate', 'nessuna'])
-    ap.add_argument('--fino', type=int); ap.add_argument('--senza-build', action='store_true'); ap.add_argument('--dir')
-    ap.add_argument('--sfondo', action='store_true'); ap.add_argument('--stato', action='store_true')
-    o = ap.parse_args(); d = C.trova_dir(o.dir); cfg = C.progetto(d); log = Log(d)
-    if o.stato:
-        righe = open(log.p, encoding='utf-8').read().splitlines()[-8:] if os.path.exists(log.p) else []
-        pid = os.path.join(d, 'auto.pid')
-        attivo = os.path.exists(pid) and _vivo(int(open(pid).read() or 0))
-        print('\n'.join(righe)); print(('IN CORSO · ' if attivo else 'FERMO · ') + L.riga_stato(d)); return
-    if o.sfondo:
-        pidf = os.path.join(d, 'auto.pid')
-        if os.path.exists(pidf) and _vivo(int(open(pidf).read().strip() or 0)):
-            sys.exit('auto.py è già in esecuzione su questa cartella: usa auto.py --stato.')
-        argv = [a for a in sys.argv[1:] if a != '--sfondo'] + ['--dir', d]
-        cmd = ([shutil.which('caffeinate'), '-i'] if shutil.which('caffeinate') else []) + [sys.executable, os.path.realpath(__file__)] + argv
+    ap.add_argument('--engine'); ap.add_argument('--model'); ap.add_argument('--parallel', type=int)
+    ap.add_argument('--review-engine'); ap.add_argument('--review-model')
+    ap.add_argument('--review', choices=['full', 'flagged', 'none'])
+    ap.add_argument('--until', type=int); ap.add_argument('--no-build', action='store_true'); ap.add_argument('--dir')
+    ap.add_argument('--background', action='store_true'); ap.add_argument('--status', action='store_true')
+    o = ap.parse_args(); d = C.find_dir(o.dir); cfg = C.project(d); log = Log(d)
+    if o.status:
+        lines = C.read(log.p).splitlines()[-8:] if os.path.exists(log.p) else []
+        print('\n'.join(lines)); print(('RUNNING · ' if running_pid(d) else 'STOPPED · ') + W.status_line(d)); return
+    if running_pid(d):
+        sys.exit(f'auto.py is already running on this folder (pid {running_pid(d)}): use auto.py --status.')
+    if o.background:
+        argv = [a for a in sys.argv[1:] if a != '--background'] + ['--dir', d]
+        caff = shutil.which('caffeinate')
+        cmd = ([caff, '-i'] if caff else []) + [sys.executable, os.path.realpath(__file__)] + argv
         with open(os.path.join(d, 'auto.out'), 'a') as out:
             pr = subprocess.Popen(cmd, stdout=out, stderr=out, stdin=subprocess.DEVNULL, start_new_session=True, cwd=d)
-        print(f'Avviato in background (pid {pr.pid}). Stato: auto.py --stato · registro: {log.p}'); return
-    pidf = os.path.join(d, 'auto.pid')
-    if os.path.exists(pidf):
-        vecchio = int(open(pidf).read().strip() or 0)
-        if vecchio != os.getpid() and _vivo(vecchio):
-            sys.exit(f'ERRORE: auto.py è già in esecuzione su questa cartella (pid {vecchio}).')
-    with open(pidf, 'w') as f:
-        f.write(str(os.getpid()))
-    for k, v in {'motore': o.motore, 'modello': o.modello, 'paralleli': o.paralleli, 'revisione': o.revisione,
-                 'motore_revisione': o.motore_revisione, 'modello_revisione': o.modello_revisione}.items():
+        print(f'Started in the background (pid {pr.pid}). Status: auto.py --status · log: {log.p}'); return
+    C.write(os.path.join(d, 'auto.pid'), str(os.getpid()))
+    for k, v in {'engine': o.engine, 'model': o.model, 'parallel': o.parallel, 'review': o.review,
+                 'review_engine': o.review_engine, 'review_model': o.review_model}.items():
         if v:
             cfg[k] = v
-    tot = C.n_parti(d); fino = min(o.fino or tot, tot)
-    if not M.disponibile(cfg):
-        sys.exit(f'ERRORE: motore «{cfg["motore"]}» non disponibile. Usa --motore oppure la modalità in chat (passo.py).')
-    log(f'AVVIO {cfg.get("titolo", "")}: motore {cfg["motore"]} {cfg.get("modello", "")}, gruppi da {cfg["gruppo"]}, '
-        f'{cfg["paralleli"]} in parallelo, revisione {cfg["revisione"]} · ' + L.riga_stato(d))
-    if not fase_traduzione(d, cfg, fino, log):
+    tot = C.n_parts(d); until = min(o.until or tot, tot)
+    if not EN.available(cfg):
+        sys.exit(f'ERROR: engine "{cfg["engine"]}" not available. Use --engine or the in-chat mode (step.py).')
+    log(f'START {cfg.get("title", "")} → {cfg["target_lang_name"]}: engine {cfg["engine"]} {cfg.get("model", "")}, '
+        f'groups of {cfg["group_size"]}, {cfg["parallel"]} in parallel, review {cfg["review"]} · ' + W.status_line(d))
+    if not translation_phase(d, cfg, until, log):
         sys.exit(1)
-    if fino < tot:
-        log(f'Fermato alla parte {fino:04d} come richiesto.'); return
-    if cfg['revisione'] != 'nessuna' and not M.disponibile(cfg, revisione=True):
-        sys.exit(f'ERRORE: motore di revisione «{cfg["motore_revisione"]}» non disponibile.')
-    fase_revisione(d, cfg, log)
-    if o.senza_build:
-        R.analizza(d, log); log('Traduzione e revisione completate (build saltata).'); return
-    R.finale(d, log)
+    if until < tot:
+        log(f'Stopped at part {until:04d} as requested.'); return
+    if cfg['review'] != 'none' and not EN.available(cfg, review=True):
+        sys.exit(f'ERROR: review engine "{cfg["review_engine"]}" not available.')
+    review_phase(d, cfg, log)
+    if o.no_build:
+        R.analyze(d, log); log('Translation and review complete (build skipped).'); return
+    R.final(d, log)
 
 
 if __name__ == '__main__':
