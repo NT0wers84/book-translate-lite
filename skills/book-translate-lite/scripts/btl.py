@@ -284,7 +284,7 @@ def cmd_log(o):
 def cmd_config(o):
     d = resolve(o.job); p = os.path.join(d, 'project.json'); cfg = C.jload(p, {})
     if not o.pairs:
-        keys = ('title', 'author', 'source_lang', 'target_lang', 'engine', 'model', 'review', 'review_engine',
+        keys = ('title', 'subtitle', 'author', 'rights', 'toc_title', 'source_lang', 'target_lang', 'engine', 'model', 'review', 'review_engine',
                 'review_model', 'group_size', 'parallel', 'retries', 'formats')
         for k in keys:
             print(f'{k:15} {json.dumps(cfg.get(k, C.DEFAULT.get(k)), ensure_ascii=False)}')

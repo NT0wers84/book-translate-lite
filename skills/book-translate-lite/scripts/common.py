@@ -21,6 +21,7 @@ TEMPLATES = os.path.join(SKILL, 'templates')
 DEFAULT = {
     'source_lang': 'en', 'target_lang': '', 'target_lang_name': '',
     'title': '', 'author': '', 'source': '',
+    'subtitle': '', 'rights': '',   # title page: e.g. series/volume line, a note such as "personal use only"
     'group_size': 3, 'parallel': 3, 'retries': 2, 'timeout_minutes': 20,
     'tail_chars': 600, 'ratio_min': 0.6, 'ratio_max': 1.9,
     # typography (filled from templates/languages.json at init)

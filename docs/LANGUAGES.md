@@ -14,7 +14,7 @@
    | `typographic_apostrophe` | turn `'` into `’` after a letter |
    | `punct_outside_quotes` | only for `«»` styles that put the full stop and comma after the closing quote (Italian) |
    | `replacements` | regex fixes applied on every save, for example `...` → `…` |
-   | `toc_title` | title of the table of contents in the EPUB |
+   | `toc_title` | title of the table of contents in the EPUB (change it with `btl config toc_title=…` if the book has its own contents page with the same name) |
 
 2. **Rules (optional):** add `skills/book-translate-lite/templates/rules/<code>.md`.
    - Copy `generic.md`, keep the *Fidelity and format* section unchanged, and write the publishing conventions: dialogue punctuation, narrative tense, number format, forms of address.

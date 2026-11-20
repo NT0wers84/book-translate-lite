@@ -8,6 +8,7 @@
 - migrate.py imports a translate-book project without touching finished parts
 - migrate.py converts a v1 (Italian file names) project
 - btl: the user-facing command, start → background run → status FINISHED, terms, config, stop/resume
+- build: title page (subtitle, rights), cover taken from the original EPUB, doubled scene breaks collapsed
 """
 import glob, hashlib, json, os, re, subprocess, sys, tempfile, unittest, zipfile
 
@@ -58,6 +59,11 @@ def new_project(tmp, formats='epub', lang='it', title='Il Faro a Orologeria'):
               'group_size': 2, 'parallel': 2})
     jw(os.path.join(d, 'project.json'), p)
     return d
+
+
+def rd_opf(epub):
+    with zipfile.ZipFile(epub) as z:
+        return z.read(next(n for n in z.namelist() if n.endswith('.opf'))).decode()
 
 
 def check_final(t, d, title='Il Faro a Orologeria', lang='it'):
@@ -202,6 +208,36 @@ class Test(unittest.TestCase):
                 import time; time.sleep(0.5)
             self.assertIn('FINISHED', run(['btl.py', 'status'], d, env=env).stdout)
             self.assertEqual(jl(os.path.join(d, 'project.json'))['review'], 'flagged')
+
+    def test_build_extras(self):
+        sys.path.insert(0, S)
+        import build
+        ep, dx = build.scene_breaks('a\n\n![](images/o.svg){.ornamental-break-image}\n\n\\* \\* \\*\n\nb\n\n![](p.png)\n\nc')
+        self.assertEqual(ep, 'a\n\n![](images/o.svg){.ornamental-break-image}\n\nb\n\n![](p.png)\n\nc')
+        self.assertEqual(dx, 'a\n\n\\* \\* \\*\n\nb\n\n![](p.png)\n\nc')
+        with tempfile.TemporaryDirectory() as tmp:
+            src = os.path.join(tmp, 'orig.epub')
+            with zipfile.ZipFile(src, 'w') as z:
+                z.writestr('META-INF/container.xml', '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                           '<rootfiles><rootfile full-path="OEBPS/c.opf"/></rootfiles></container>')
+                z.writestr('OEBPS/c.opf', '<package xmlns="http://www.idpf.org/2007/opf"><manifest>'
+                           '<item id="x" href="img/front%20art.jpg" media-type="image/jpeg" properties="cover-image"/>'
+                           '</manifest></package>')
+                z.writestr('OEBPS/img/front art.jpg', b'JPEGDATA')
+            d = new_project(tmp)
+            p = jl(os.path.join(d, 'project.json'))
+            p.update({'source': 'orig.epub', 'subtitle': 'Series, volume 2', 'rights': 'Personal use only.'})
+            jw(os.path.join(d, 'project.json'), p)
+            for f in glob.glob(os.path.join(d, 'chunk[0-9]*.md')):
+                wr(os.path.join(d, 'output_' + os.path.basename(f)), rd(f))
+            r = run(['build.py', '--formats', 'epub'], d)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(rd(os.path.join(d, 'images', 'cover.jpg'), 'rb'), b'JPEGDATA')
+            with zipfile.ZipFile(os.path.join(d, 'book', 'Il Faro a Orologeria.epub')) as z:
+                allx = ''.join(z.read(n).decode('utf-8', 'ignore') for n in z.namelist() if n.endswith('.xhtml'))
+            self.assertIn('Series, volume 2', allx)
+            self.assertIn('Personal use only.', allx)
+            self.assertIn('cover-image', rd_opf(os.path.join(d, 'book', 'Il Faro a Orologeria.epub')))
 
     def test_migrate_v1(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.2.0 — 2026-11-20
+
+- **Title page:** new `subtitle` and `rights` settings in `project.json` (`btl config subtitle="…" rights="…"`); `btl config` also shows `toc_title`.
+- **Cover:** if there is no `images/cover.*`, the build extracts the cover from the original EPUB (also for imported projects).
+- **Scene breaks:** an ornament image followed by its text fallback (`* * *`) is shown once — the image in EPUB/PDF, the text in DOCX, where SVG ornaments would be lost.
+- Test `test_build_extras`.
+
 ## 2.1.0 — 2026-11-20
 
 - **`btl`**: one user-facing command (`start`, `status`, `stop`, `resume`, `review`, `build`, `terms`, `config`, `log`, `jobs`, `doctor`, `next`, `import`) with short, human-readable output and a job registry.

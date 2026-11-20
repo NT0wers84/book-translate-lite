@@ -97,7 +97,7 @@ book.epub ─▶ parts ─▶ translation in groups ─▶ checks ─▶ review 
    - quote and punctuation problems.
 
    Then the review engine (which can be a different one, for example Claude) re-reads source and translation and makes targeted fixes. Fixes that would break the structure are rejected, and the originals are kept.
-4. **Book.** pandoc builds the EPUB and DOCX and Calibre the PDF, with the correct language tag, a full table of contents and styled system messages.
+4. **Book.** pandoc builds the EPUB and DOCX and Calibre the PDF, with the correct language tag, a full table of contents and styled system messages. The cover comes from the original EPUB (or `images/cover.*`); scene breaks are never doubled. Optional title-page lines: `btl config subtitle="Series, volume 6" rights="Personal use only"`.
 5. **Report.** `review/FINAL_REPORT.md` lists what is still worth a look.
 
 Everything stays in a `<book>_temp/` folder next to the book. You can stop and resume at any time.
