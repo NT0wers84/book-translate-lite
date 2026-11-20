@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.DS_Store
+tests/.artifacts/
+# lavori di traduzione: mai nel repository
+*_temp/
+*.epub
+*.pdf
+*.docx
+!tests/*.md
