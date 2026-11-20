@@ -8,6 +8,15 @@ On a real 291-part book, translated with an LLM orchestrator and sub-agents, the
 - **Orchestrator.** A conversation kept open for days reached about 400k tokens per call. It accounted for about **90%** of the total spend.
 - **Skill file.** The original skill had a `SKILL.md` of about 7k tokens, loaded into every context.
 
+## User interface
+
+Users talk to their agent. The skill (`SKILL.md`, about 700 tokens) maps requests to **one command**, `btl`, whose output is short and written for humans:
+
+- `btl start`, `status`, `stop`, `resume`, `review`, `build`, `terms`, `config` and `doctor`;
+- `btl next` drives the in-chat mode.
+
+A small registry (`~/.book-translate-lite/jobs.json`) lets the user refer to a job by part of its title.
+
 ## Answers
 
 | problem | solution |

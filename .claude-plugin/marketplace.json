@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "book-translate-lite",
+  "description": "Translate whole books with AI agents, end to end, at low token cost.",
+  "owner": {"name": "NT0wers84"},
+  "plugins": [
+    {
+      "name": "book-translate-lite",
+      "description": "Translate a whole book (EPUB/PDF/DOCX) into any language, end to end, with a final review and EPUB/DOCX/PDF output, using very few tokens.",
+      "version": "2.1.0",
+      "source": "./",
+      "skills": ["./skills/book-translate-lite"],
+      "author": {"name": "NT0wers84"},
+      "homepage": "https://github.com/NT0wers84/book-translate-lite",
+      "repository": "https://github.com/NT0wers84/book-translate-lite",
+      "license": "MIT",
+      "keywords": ["translation", "books", "epub", "pdf", "docx", "ebook"]
+    }
+  ]
+}

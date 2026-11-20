@@ -7,11 +7,12 @@
 - save.py rejects a part with a missing paragraph and invalid meta
 - migrate.py imports a translate-book project without touching finished parts
 - migrate.py converts a v1 (Italian file names) project
+- btl: the user-facing command, start → background run → status FINISHED, terms, config, stop/resume
 """
 import glob, hashlib, json, os, re, subprocess, sys, tempfile, unittest, zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-S = os.path.join(os.path.dirname(HERE), 'scripts')
+S = os.path.join(os.path.dirname(HERE), 'skills', 'book-translate-lite', 'scripts')
 sys.path.insert(0, HERE)
 from make_test_book import make
 
@@ -161,6 +162,46 @@ class Test(unittest.TestCase):
             self.assertEqual(jl(os.path.join(d, 'state.json'))['done'], [1, 2])
             self.assertEqual(jl(os.path.join(d, 'terms.json'))[0]['type'], 'fixed')
             self.assertEqual(run(['check.py', '--all'], d).returncode, 0)
+
+    def test_btl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {'BTL_HOME': os.path.join(tmp, 'home')}
+            book = make(tmp)
+            r = run(['btl.py', 'start', book], tmp, env=env)
+            self.assertEqual(r.returncode, 2)                       # no language: asks for --to
+            self.assertIn('--to', r.stderr)
+            r = run(['btl.py', 'start', book, '--to', 'it', '--chunk-size', '400', '--no-start'], tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn('Ready', r.stdout)
+            job = 'Clockwork'                                        # a job can be named by part of its title
+            r = run(['btl.py', 'config', '--job', job, 'title=Il Faro a Orologeria', 'engine=command',
+                     'engine_command=' + json.dumps(FAKE), 'group_size=2', 'formats=epub'], tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            r = run(['btl.py', 'terms', 'add', 'Brass Warden', 'Custode d’Ottone', '--job', 'Faro'], tmp, env=env)
+            self.assertIn('F  Brass Warden', r.stdout)
+            self.assertIn('Brass Warden', run(['btl.py', 'terms', 'list', '--job', 'Faro'], tmp, env=env).stdout)
+            r = run(['btl.py', 'resume', 'Faro'], tmp, env=env)
+            self.assertIn('Started in the background', r.stdout, r.stdout + r.stderr)
+            for _ in range(60):
+                st = run(['btl.py', 'status'], tmp, env=env).stdout   # no job given: the only/most recent one
+                if 'FINISHED' in st and 'stopped' in st:
+                    break
+                import time; time.sleep(0.5)
+            self.assertIn('FINISHED', st)
+            self.assertIn('Il Faro a Orologeria.epub', st)
+            self.assertIn('FINAL_REPORT.md', st)
+            d = os.path.join(tmp, 'The Clockwork Lighthouse_temp')
+            check_final(self, d)
+            self.assertIn('Faro', run(['btl.py', 'jobs'], tmp, env=env).stdout)
+            self.assertIn('Not running', run(['btl.py', 'stop'], d, env=env).stdout)
+            r = run(['btl.py', 'review', '--again', '--flagged'], d, env=env)     # rerun of the review
+            self.assertIn('Started in the background', r.stdout, r.stdout + r.stderr)
+            for _ in range(60):
+                if 'FINISHED' in run(['btl.py', 'status'], d, env=env).stdout:
+                    break
+                import time; time.sleep(0.5)
+            self.assertIn('FINISHED', run(['btl.py', 'status'], d, env=env).stdout)
+            self.assertEqual(jl(os.path.join(d, 'project.json'))['review'], 'flagged')
 
     def test_migrate_v1(self):
         with tempfile.TemporaryDirectory() as tmp:

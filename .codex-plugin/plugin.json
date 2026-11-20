@@ -1,0 +1,25 @@
+{
+  "name": "book-translate-lite",
+  "version": "2.1.0",
+  "description": "Translate a whole book (EPUB/PDF/DOCX) into any language, end to end, with a final review and EPUB/DOCX/PDF output, using very few tokens.",
+  "author": {"name": "NT0wers84", "url": "https://github.com/NT0wers84"},
+  "homepage": "https://github.com/NT0wers84/book-translate-lite",
+  "repository": "https://github.com/NT0wers84/book-translate-lite",
+  "license": "MIT",
+  "keywords": ["translation", "books", "epub", "pdf", "docx", "ebook"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Book Translate Lite",
+    "shortDescription": "Translate whole books into any language, end to end.",
+    "longDescription": "Converts an EPUB/PDF/DOCX into parts, translates them in parallel with automatic checks, runs a final review and builds EPUB, DOCX and PDF. The orchestrator is a script, so it uses very few tokens.",
+    "developerName": "NT0wers84",
+    "category": "Productivity",
+    "capabilities": [],
+    "websiteURL": "https://github.com/NT0wers84/book-translate-lite",
+    "defaultPrompt": [
+      "Translate this book into Italian: ~/Books/my-book.epub",
+      "How is my book translation going?",
+      "Rerun the final review of my translation."
+    ]
+  }
+}

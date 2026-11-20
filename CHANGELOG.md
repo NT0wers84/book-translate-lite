@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.1.0 — 2026-11-20
+
+- **`btl`**: one user-facing command (`start`, `status`, `stop`, `resume`, `review`, `build`, `terms`, `config`, `log`, `jobs`, `doctor`, `next`, `import`) with short, human-readable output and a job registry.
+- The skill is a command router: talk to the agent or type `/book-translate-lite translate <book> <lang>`.
+- Installable as a plugin: Claude Code (`.claude-plugin/`) and Codex (`.codex-plugin/`, `.agents/plugins/`) marketplaces.
+- Repository layout: the skill lives in `skills/book-translate-lite/` (scripts and templates inside it). `install.sh` also puts `btl` on the PATH.
+
 ## 2.0.0 — 2026-11-20
 
 - Everything in English: scripts, messages, prompts, docs.
