@@ -57,6 +57,7 @@ Just talk to the agent. In Claude Code you can also type `/book-translate-lite �
 | *Translate it into German, title "Der Leuchtturm"* | the same, with the translated title |
 | *How is it going?* | progress, phase, where the book and the report are |
 | *Stop* / *Continue* | stops it, and later resumes it where it was |
+| *Translate this essay into Spanish* / *it's a programming manual* | picks the matching genre rules (`nonfiction`, `technical`, …) |
 | *Translate volume 2, it's the same series as the first one* | starts with the first volume's glossary, rules and style |
 | *Always translate "Brass Warden" as "Custode d’Ottone"* | adds a fixed glossary term |
 | *"Brass Warden" was wrong: fix it in the parts already done* | changes the term and rewrites it where it was already translated |
@@ -73,8 +74,8 @@ The agent uses one command, `btl`, and you can use it too:
 
 ```
 btl start BOOK --to LANG [--from LANG] [--title "…"] [--engine codex|claude] [--review-engine claude]
-          [--series PREV_JOB] [--workdir DIR]
-btl series [JOB] --from PREV_JOB [--retro]
+          [--genre GENRE] [--series PREV_JOB] [--workdir DIR]
+btl genre [JOB] [GENRE]      btl series [JOB] --from PREV_JOB [--retro]
 btl status [JOB]             btl stop [JOB]            btl resume [JOB]
 btl review [JOB] [--again] [--flagged] [--engine claude]
 btl build [JOB] [--formats epub,docx,pdf]
@@ -91,10 +92,10 @@ btl import FOLDER            (projects started with translate-book or v1)
 Volumes of the same series must share names and style. Start every later volume with `--series`:
 
 ```
-btl start "Book 7.epub" --to it --series "Book 6"
+btl start "Volume 3.epub" --to it --series "Volume 2"
 ```
 
-The new job gets the previous volume's glossary (fixed and proposed terms), `rules.md` and house-style settings (quotes, replacements, forbidden forms, all-caps chat names, table-of-contents title, rights line, engines and review settings), and its folder is created next to the previous job. If you forget `--series` and another job by the same author exists, `btl start` says so and waits before starting.
+The new job gets the previous volume's glossary (fixed and proposed terms), `rules.md` and house-style settings (genre, quotes, replacements, forbidden forms, all-caps names, table-of-contents title, rights line, engines and review settings), and its folder is created next to the previous job. If you forget `--series` and another job by the same author exists, `btl start` says so and waits before starting.
 
 For a job that is already under way, `btl series JOB --from PREV --retro` merges the glossary and rewrites, in the parts already translated, every term that had been rendered differently. A term changed later can be rewritten the same way with `btl terms add "X" "Y" --retro`. The rewrite works paragraph by paragraph, only where the source paragraph contains the term; run `btl review --again` afterwards to fix gender and number agreement.
 
@@ -143,6 +144,22 @@ Any target language works. Some have a **profile** with typography and publishin
 
 Adding a language takes a few lines: see [docs/LANGUAGES.md](docs/LANGUAGES.md). Pull requests are welcome.
 
+## Genres
+
+`rules.md` = the language rules (above) + a **genre section** that fits the kind of book. Pick it with `btl start … --genre GENRE` or change it later with `btl genre GENRE` (only the genre section is rewritten; your own notes stay).
+
+| genre | for | main rules |
+|---|---|---|
+| `fiction` (default) | novels, short stories | character voices, dialogue conventions, talking names, adapted wordplay |
+| `nonfiction` | essays, history, biography, popular science | precision, established terminology, published translations of quotations, references untouched |
+| `technical` | manuals, programming, textbooks | code/commands/paths never translated, official UI localisation, one term per concept |
+| `children` | picture books, children's and YA | age-appropriate language, read-aloud rhythm, rebuilt rhymes and funny names |
+| `poetry` | poetry, verse | line-for-line, meaning > rhythm > rhyme |
+| `gamelit` | LitRPG, GameLit, system/stat-based stories | fixed formulas for system messages, consistent skill/item names, stat formats, chat lines |
+| `general` | anything else | only the language rules and glossary consistency |
+
+The genres live in `templates/genres/<genre>.md`; add one by dropping a file there. Anything specific to one book or series (house terms, names, forbidden forms) goes in that job's `rules.md`, `terms.json` and `project.json`, never in the skill.
+
 ## Settings
 
 Change settings by telling the agent, or with `btl config KEY=VALUE`. Everything is stored in the job's `project.json`.
@@ -154,6 +171,7 @@ Change settings by telling the agent, or with `btl config KEY=VALUE`. Everything
 | `review_engine`, `review_model`, `review_reasoning` | same as translation, —, `medium` | review engine |
 | `review` | `full` | `full`, `flagged` (only parts with problems) or `none` |
 | `group_size`, `parallel`, `retries` | 3, 3, 2 | parts per call, calls at once, retries of a rejected part |
+| `genre`, `system_boxes` | `fiction`, automatic | genre rules (see Genres); boxed bold-only paragraphs, on for `gamelit` |
 | `replacements`, `forbidden`, `uppercase_chat` | from the language profile | automatic fixes, blocking forms, all-caps chat names |
 | `formats` | `epub,docx,pdf` | output formats |
 

@@ -13,7 +13,7 @@ import os, re
 import common as C
 
 # settings that describe the series' house style, not the single book
-SERIES_KEYS = ('quotes', 'typographic_apostrophe', 'punct_outside_quotes', 'replacements', 'forbidden',
+SERIES_KEYS = ('genre', 'quotes', 'typographic_apostrophe', 'punct_outside_quotes', 'replacements', 'forbidden',
                'uppercase_chat', 'toc_title', 'rights', 'formats', 'group_size', 'review', 'review_group_size',
                'engine', 'engine_command', 'model', 'reasoning', 'review_engine', 'review_model',
                'review_reasoning', 'ratio_min', 'ratio_max')

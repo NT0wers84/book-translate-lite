@@ -7,7 +7,7 @@
 ## Voice
 
 - Natural, publishable English (US spelling unless the project rules say otherwise), not a calque.
-- Keep the narrative tense and point of view of the source.
+- Keep the tense, person and point of view of the source.
 
 ## Punctuation (English publishing conventions)
 
@@ -17,5 +17,5 @@
 ## Names and terms
 
 - Use the renderings in the Terms table: F (fixed) ones never change.
-- Real proper names stay as they are; meaningful names, items, places and spells are translated.
+- Real proper names stay as they are. Invented or meaningful names (people, places, objects, organisations) follow the genre section; when in doubt keep them and note it in META.
 - New recurring term: add it to META.new_entities. To change a P (proposed) term use META.conflicts.

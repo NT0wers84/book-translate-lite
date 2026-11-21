@@ -28,6 +28,8 @@ DEFAULT = {
     'quotes': '“”', 'typographic_apostrophe': True, 'punct_outside_quotes': False,
     'replacements': [],     # [{"re": "\\bOkay\\b", "with": "Ok"}]  applied automatically on save
     'forbidden': [],        # [{"re": "...", "msg": "..."}]           blocking errors
+    'genre': 'fiction',     # templates/genres/<genre>.md, appended to rules.md
+    'system_boxes': None,   # box bold-only paragraphs (system messages); None = only for genre gamelit
     'uppercase_chat': [],   # names whose chat lines "Name: ..." must be ALL CAPS
     # automatic mode (auto.py)
     'engine': 'codex',      # codex | claude | command
@@ -166,6 +168,25 @@ def present(ts, text):
     return [t for t in ts if any(rx_term(f).search(text) for f in forms(t))]
 
 
+GENRES = ('fiction', 'nonfiction', 'technical', 'children', 'poetry', 'gamelit', 'general')
+
+
+def genre_rules(genre, lang_name):
+    """The '## Genre: …' section for rules.md (templates/genres/<genre>.md)."""
+    p = os.path.join(TEMPLATES, 'genres', f'{genre}.md')
+    if not os.path.exists(p):
+        raise SystemExit(f'Unknown genre "{genre}". Available: ' + ', '.join(GENRES))
+    return read(p).strip().replace('{language}', lang_name)
+
+
+def set_genre(rules, section):
+    """Replace (or append) the genre section of a rules.md text."""
+    rx = re.compile(r'(?ms)^## Genre:.*?(?=^## (?!Genre:)|\Z)')
+    if rx.search(rules):
+        return rx.sub(section.rstrip() + '\n\n', rules, count=1).rstrip() + '\n'
+    return rules.rstrip() + '\n\n' + section.rstrip() + '\n'
+
+
 def bare(text):
     """Text without Markdown, images, links, URLs and {attributes}: what a translator would translate."""
     t = re.sub(r'!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)|\{[^}]*\}|https?://\S+', ' ', text)
@@ -183,7 +204,7 @@ def nothing_to_translate(text, cfg=None):
 
 
 def rendered(target, text_lower):
-    """Is a glossary rendering present, allowing inflection (Signore/Signora, -o/-i/-a/-e)?
+    """Is a glossary rendering present, allowing inflection (Maestro/Maestra, -o/-i/-a/-e)?
     Every word of 4+ letters must appear by its stem (the word minus its last 2 letters)."""
     tc = re.sub(r'\s*\(.*?\)', '', target).lower()
     words = [w for w in re.findall(r'[^\W\d_]+', tc) if len(w) >= 4]
@@ -201,7 +222,7 @@ def generic(term):
 
 def kept_name(src, out, source):
     """Is every occurrence of `src` in `out` part of a longer proper name kept as it is in the source
-    (Splash Zone, Dungeons and Dragons)?"""
+    (“Pride” inside “Pride and Prejudice”, “Moon” inside “Blue Moon Tavern”)?"""
     tok = r"[A-Z][\w’'\-]*"
     conn = r"(?:and|&|of|the|de|du|von|van)"
     rx = re.compile(rf"(?:(?:{tok}|{conn})\s+)*" + re.escape(src) + rf"(?:\s+(?:{tok}|{conn}))*")

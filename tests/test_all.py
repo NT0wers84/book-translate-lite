@@ -11,6 +11,7 @@
 - build: title page (subtitle, rights), cover taken from the original EPUB, doubled scene breaks collapsed
 - series: --series carries glossary/rules/style into the next volume (and its folder), the same-author hint,
   btl series --retro and btl terms add --retro rewrite renderings in parts already translated
+- genres: --genre picks the genre section of rules.md, btl genre swaps it
 - checks: link-only/author-only parts are not "untranslated", kept proper names, inflected renderings,
   generic words; an engine out of credits stops the run at once with a hint
 """
@@ -297,17 +298,41 @@ class Test(unittest.TestCase):
             self.assertIn('replaced', r.stdout, r.stdout + r.stderr)
             self.assertIn('Gabbiano Ramato', rd(os.path.join(d3, 'output_' + os.path.basename(gull))))
 
+    def test_genres(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {'BTL_HOME': os.path.join(tmp, 'home')}
+            book = make(tmp)
+            r = run(['btl.py', 'start', book, '--to', 'it', '--genre', 'technical', '--no-start'], tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            d = os.path.join(tmp, 'The Clockwork Lighthouse_temp')
+            rules = rd(os.path.join(d, 'rules.md'))
+            self.assertIn('## Genre: technical', rules)
+            self.assertIn('Italian publishing conventions', rules)
+            self.assertEqual(jl(os.path.join(d, 'project.json'))['genre'], 'technical')
+            r = run(['btl.py', 'genre', 'poetry'], d, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            rules = rd(os.path.join(d, 'rules.md'))
+            self.assertIn('## Genre: poetry', rules)
+            self.assertNotIn('## Genre: technical', rules)
+            self.assertEqual(rules.count('## Genre:'), 1)
+            self.assertIn('## Names and terms', rules)                       # language rules untouched
+            self.assertIn('poetry', run(['btl.py', 'genre'], d, env=env).stdout)
+            r = run(['btl.py', 'genre', 'cookbookx'], d, env=env)
+            self.assertNotEqual(r.returncode, 0)
+            for g in ('fiction', 'nonfiction', 'technical', 'children', 'poetry', 'gamelit', 'general'):
+                self.assertTrue(os.path.exists(os.path.join(S, '..', 'templates', 'genres', g + '.md')), g)
+
     def test_checks_and_blocked_engine(self):
         sys.path.insert(0, S)
         import common as C, engine as EN
         self.assertTrue(C.nothing_to_translate('[![Facebook icon](images/f.jpg){.c}](https://x.y)'))
-        self.assertTrue(C.nothing_to_translate('## MATT DINNIMAN', {'author': 'Matt Dinniman'}))
-        self.assertFalse(C.nothing_to_translate('## CHAPTER ONE', {'author': 'Matt Dinniman'}))
-        self.assertTrue(C.rendered('Signore della Guerra', 'la signora della guerra parlò'))
-        self.assertFalse(C.rendered('Signore della Guerra', 'il capo parlò'))
-        self.assertTrue(C.kept_name('Splash', 'Il prossimo è Splash Zone.', 'Next is Splash Zone.'))
-        self.assertTrue(C.kept_name('Dragons', 'come in Dungeons and Dragons', 'like in Dungeons and Dragons'))
-        self.assertFalse(C.kept_name('Splash', 'Splash attaccò.', 'Splash attacked.'))
+        self.assertTrue(C.nothing_to_translate('## JANE DOE', {'author': 'Jane Doe'}))
+        self.assertFalse(C.nothing_to_translate('## CHAPTER ONE', {'author': 'Jane Doe'}))
+        self.assertTrue(C.rendered('Maestro delle Ombre', 'la maestra delle ombre parlò'))
+        self.assertFalse(C.rendered('Maestro delle Ombre', 'il capo parlò'))
+        self.assertTrue(C.kept_name('Moon', 'Entrò nel Blue Moon Tavern.', 'He entered the Blue Moon Tavern.'))
+        self.assertTrue(C.kept_name('Prejudice', 'come in Pride and Prejudice', 'as in Pride and Prejudice'))
+        self.assertFalse(C.kept_name('Moon', 'La Moon brillava.', 'The Moon shone.'))
         self.assertTrue(C.generic({'source': 'phase'})); self.assertFalse(C.generic({'source': 'Brass Warden'}))
         self.assertTrue(EN.blocked('ERROR: Your workspace is out of credits. Add credits to continue.'))
         self.assertTrue(EN.blocked("You've hit your 5-hour limit"))

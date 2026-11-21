@@ -3,10 +3,12 @@
 
 Usage:  init.py book.epub --to it [--from en] [--chunk-size 6000] [--group 3]
                 [--title "Translated title"] [--author "…"] [--workdir DIR]
+                [--genre fiction|nonfiction|technical|children|poetry|gamelit|general]
         (.pdf, .docx and .md work too; `--to` is any language code, see templates/languages.json)
 
 Creates <book>_temp/ next to the book (or inside --workdir) with: chunkNNNN.md, project.json (typography from the
-language profile), rules.md (from templates/rules/<lang>.md or generic.md), an empty
+language profile), rules.md (language rules from templates/rules/<lang>.md or
+generic.md, plus the genre section from templates/genres/<genre>.md), an empty
 terms.json, candidates.json (recurring names) and state.json.
 Never overwrites an existing rules.md, terms.json or state.json.
 """
@@ -78,6 +80,7 @@ def main():
     ap.add_argument('--from', dest='src', default='en', help='source language code (default en)')
     ap.add_argument('--chunk-size', type=int, default=6000); ap.add_argument('--group', type=int, default=3)
     ap.add_argument('--title', default=''); ap.add_argument('--author', default='')
+    ap.add_argument('--genre', default='', help='type of book: ' + ', '.join(C.GENRES) + ' (default fiction)')
     ap.add_argument('--workdir', default='', help='folder that will contain <book>_temp (default: next to the book)')
     o = ap.parse_args()
     book = os.path.abspath(o.book)
@@ -103,13 +106,17 @@ def main():
     prof = apply_language(cfg, o.to)
     cfg.update({'source_lang': o.src, 'group_size': o.group, 'source': book,
                 'title': o.title or cfg.get('title') or re.sub(r'\s*\(.*?\)\s*$', '', meta.get('original_title', stem)),
-                'author': o.author or cfg.get('author') or meta.get('creator', '')})
+                'author': o.author or cfg.get('author') or meta.get('creator', ''),
+                'genre': o.genre or cfg.get('genre') or 'fiction'})
     for k, v in C.DEFAULT.items():
         cfg.setdefault(k, v)
     C.jsave(pp, cfg)
     rp = os.path.join(d, 'rules.md')
     if not os.path.exists(rp):
-        C.write(rp, C.read(rules_template(o.to)).replace('{language}', cfg['target_lang_name']))
+        C.write(rp, C.set_genre(C.read(rules_template(o.to)).replace('{language}', cfg['target_lang_name']),
+                                C.genre_rules(cfg['genre'], cfg['target_lang_name'])))
+    elif o.genre:
+        C.write(rp, C.set_genre(C.read(rp), C.genre_rules(o.genre, cfg['target_lang_name'])))
     if not os.path.exists(os.path.join(d, 'terms.json')):
         C.jsave(os.path.join(d, 'terms.json'), [])
     if not os.path.exists(os.path.join(d, 'state.json')):
@@ -118,7 +125,7 @@ def main():
     C.jsave(os.path.join(d, 'candidates.json'), cand)
     print(f'Working folder: {d}')
     print(f'Parts: {C.n_parts(d)} · {o.src} → {o.to} ({cfg["target_lang_name"]}'
-          + ('' if prof else ', no language profile: generic rules') + f') · groups of {o.group} · title «{cfg["title"]}»')
+          + ('' if prof else ', no language profile: generic rules') + f') · {cfg["genre"]} · groups of {o.group} · title «{cfg["title"]}»')
     print(f'Candidates: {len(cand)} recurring names. Most frequent: '
           + ', '.join(f"{x['term']} ({x['count']})" for x in cand[:25]))
     print('Next (optional): translated title in project.json, key names in terms.json, style notes in rules.md;'

@@ -2,7 +2,8 @@
 """btl — one command for the whole book-translate-lite workflow.
 
   btl start BOOK --to LANG [--from LANG] [--title "…"] [--engine codex|claude] [--review-engine claude]
-                                         [--review full|flagged|none] [--series PREV_JOB] [--workdir DIR]
+                                         [--review full|flagged|none] [--genre GENRE] [--series PREV_JOB]
+                                         [--workdir DIR]
                                          [--chat] [--no-start]
                                          set up the book and start translating until the book is done;
                                          --series carries glossary, rules and style of a previous volume
@@ -18,6 +19,8 @@
   btl build [JOB] [--formats epub,docx,pdf] [--title "…"] [--partial]
   btl check [JOB]                        automatic checks on every translated part
   btl log [JOB] [-n 20]                  last lines of the automatic run log
+  btl genre [JOB] [GENRE]                show or change the type of book (fiction, nonfiction, technical,
+                                         children, poetry, gamelit, general): rewrites the genre rules
   btl config [JOB] [KEY=VALUE …]         show or change project settings (title, engine, review, …)
   btl terms [--job JOB] list [TEXT] | add SOURCE TARGET [--proposed] [--note …] [--retro] | remove SOURCE
                                          --retro rewrites the old rendering in parts already translated
@@ -195,6 +198,8 @@ def cmd_start(o):
         args += ['--title', o.title]
     if o.chunk_size:
         args += ['--chunk-size', o.chunk_size]
+    if o.genre:
+        args += ['--genre', o.genre]
     prev = resolve(o.series) if o.series else None
     workdir = o.workdir or (os.path.dirname(prev) if prev else '')
     if workdir:
@@ -317,7 +322,7 @@ def cmd_config(o):
         o.job = o.pairs.pop(0)
     d = resolve(o.job); p = os.path.join(d, 'project.json'); cfg = C.jload(p, {})
     if not o.pairs:
-        keys = ('title', 'subtitle', 'author', 'rights', 'toc_title', 'source_lang', 'target_lang', 'engine', 'model', 'review', 'review_engine',
+        keys = ('title', 'subtitle', 'author', 'genre', 'rights', 'toc_title', 'source_lang', 'target_lang', 'engine', 'model', 'review', 'review_engine',
                 'review_model', 'group_size', 'parallel', 'retries', 'formats')
         for k in keys:
             print(f'{k:15} {json.dumps(cfg.get(k, C.DEFAULT.get(k)), ensure_ascii=False)}')
@@ -364,6 +369,20 @@ def cmd_terms(o):
         src = ' '.join(o.args)
         left = [t for t in ts if t['source'].lower() != src.lower()]
         C.jsave(p, left); print(f'removed {len(ts) - len(left)} term(s)'); return
+
+
+def cmd_genre(o):
+    if o.job and not o.genre and (o.job in C.GENRES or not os.path.exists(os.path.expanduser(o.job))):
+        o.job, o.genre = None, o.job          # `btl genre poetry`: one argument is the genre
+    d = resolve(o.job); cfg = C.project(d)
+    if not o.genre:
+        print(f'genre: {cfg.get("genre", "fiction")}   (available: {", ".join(C.GENRES)})'); return
+    sec = C.genre_rules(o.genre, cfg['target_lang_name'])
+    rp = os.path.join(d, 'rules.md')
+    C.write(rp, C.set_genre(C.read(rp) if os.path.exists(rp) else '', sec))
+    raw = C.jload(os.path.join(d, 'project.json'), {}); raw['genre'] = o.genre
+    C.jsave(os.path.join(d, 'project.json'), raw)
+    print(f'genre = {o.genre}: rules.md updated (the parts already translated are not changed)')
 
 
 def cmd_series(o):
@@ -431,6 +450,7 @@ def main():
     s.add_argument('book'); s.add_argument('--to'); s.add_argument('--from', dest='src', default='en')
     s.add_argument('--title'); s.add_argument('--engine'); s.add_argument('--review-engine'); s.add_argument('--model')
     s.add_argument('--review', choices=['full', 'flagged', 'none']); s.add_argument('--chunk-size', type=int)
+    s.add_argument('--genre', choices=C.GENRES, help='type of book (default fiction): picks the genre rules')
     s.add_argument('--series', help='previous volume (job) whose glossary, rules and style to carry over')
     s.add_argument('--workdir', help='folder that will contain <book>_temp (default: next to the book, '
                    'or next to the --series job)')
@@ -455,6 +475,8 @@ def main():
     p = sub.add_parser('terms', help='glossary'); p.add_argument('action', choices=['list', 'add', 'remove'])
     p.add_argument('args', nargs='*'); p.add_argument('--job'); p.add_argument('--proposed', action='store_true')
     p.add_argument('--note'); p.add_argument('--retro', action='store_true'); p.set_defaults(fn=cmd_terms)
+    p = sub.add_parser('genre', help='show or change the type of book'); p.add_argument('job', nargs='?')
+    p.add_argument('genre', nargs='?'); p.set_defaults(fn=cmd_genre)
     p = sub.add_parser('series', help='carry glossary/rules/style over from a previous volume')
     p.add_argument('job', nargs='?'); p.add_argument('--from', dest='prev', required=True)
     p.add_argument('--retro', action='store_true'); p.add_argument('--keep-rules', action='store_true')

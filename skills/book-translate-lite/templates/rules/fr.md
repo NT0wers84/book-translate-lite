@@ -7,7 +7,7 @@
 ## Voice
 
 - Natural, publishable French, not a calque. Keep the author's register, rhythm and humour.
-- Past narration → *passé simple* + *imparfait*.
+- Narration in the past → *passé simple* + *imparfait*; narration in the present stays in the present.
 
 ## Punctuation (French publishing conventions)
 
@@ -19,5 +19,5 @@
 ## Names and terms
 
 - Use the renderings in the Terms table: F (fixed) ones never change.
-- Real proper names stay as they are; meaningful names, items, places and spells are translated.
+- Real proper names stay as they are. Invented or meaningful names (people, places, objects, organisations) follow the genre section; when in doubt keep them and note it in META.
 - New recurring term: add it to META.new_entities. To change a P (proposed) term use META.conflicts.

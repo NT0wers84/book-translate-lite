@@ -7,8 +7,8 @@
 ## Voice
 
 - Natural, publishable Italian, not a calque. Keep the author's register, rhythm and humour.
-- Past narration → *passato remoto* + *imperfetto*.
-- Swearing and tone: same strength, do not soften.
+- Narration in the past → *passato remoto* + *imperfetto*; narration in the present stays in the present.
+- Register: the same strength as the source — do not soften coarse language, do not make formal text casual.
 
 ## Punctuation (Italian publishing conventions)
 
@@ -17,12 +17,12 @@
 - Quotes inside quotes and titles in “…”.
 - Interrupted line with an attached dash: «Aspe—». Asides with « – … – ». Ellipsis as the single character «…».
 - Typographic apostrophe ’ (l’unica, po’), never the straight '.
-- Numbers: 3.000.000 · 1,43 · 20%. Small quantities in narration are written in words.
+- Numbers: 3.000.000 · 1,43 · 20%. Small quantities in running prose are written in words; data, measurements, tables and stats keep digits.
 - Interjections: «Be’», «Ok» (never «Okay»), «Ehi», «Mmh».
 
 ## Names and terms
 
 - Use the renderings in the Terms table: F (fixed) ones never change.
-- Real proper names stay as they are. Meaningful names, item, place and spell names are translated with Iniziali Maiuscole.
-- Adapt puns so they work in Italian; if impossible, keep the meaning.
+- Real proper names stay as they are. Invented or meaningful names (people, places, objects, organisations) follow the genre section, with Iniziali Maiuscole.
+- Wordplay: as the genre section says; by default adapt it so it works in Italian, or keep the meaning.
 - New recurring term: choose the rendering and add it to META.new_entities. To change a P (proposed) term use META.conflicts.

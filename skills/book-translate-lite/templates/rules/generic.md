@@ -7,13 +7,13 @@
 ## Voice
 
 - Write natural, publishable {language}, not a calque of the source. Keep the author's register, rhythm and humour.
-- Keep the narrative tense and point of view of the source.
-- Swearing and tone: render with the same strength, do not soften.
+- Keep the tense, person and point of view of the source.
+- Register: the same strength as the source — do not soften coarse language, do not make formal text casual.
 - Use the punctuation and quotation marks of published books in {language}.
 
 ## Names and terms
 
 - Use the renderings in the Terms table: F (fixed) ones never change.
-- Real proper names stay as they are. Meaningful names, item, place and spell names are translated, with Initial Capitals where the language allows.
-- Adapt puns so they work in {language}; if impossible, keep the meaning or the joke.
+- Real proper names stay as they are. Invented or meaningful names (people, places, objects, organisations) follow the genre section, with Initial Capitals where the language allows.
+- Wordplay: as the genre section says; by default adapt it so it works in {language}, or keep the meaning.
 - New recurring term: choose the rendering and add it to META.new_entities. To change a P (proposed) term use META.conflicts.

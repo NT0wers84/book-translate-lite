@@ -5,8 +5,8 @@ Usage:  build.py [--title "Translated title"] [--formats epub,docx,pdf] [--out F
                  [--cover img.jpg] [--partial]
 
 - EPUB and DOCX with pandoc: correct language (target_lang from project.json), full table of
-  contents (one chapter per # heading), CSS with a box for system messages (paragraphs that
-  are entirely bold), small caps, quotes, notes.
+  contents (one chapter per # heading), small caps, quotes, notes; system messages (paragraphs
+  that are entirely bold) are boxed for genre gamelit or with project.json "system_boxes": true.
 - PDF with Calibre (ebook-convert) from the EPUB.
 - --partial: build even if parts are missing (stops at the first missing one).
 - Title page: title, subtitle, author and rights from project.json (`btl config subtitle="…" rights="…"`).
@@ -110,8 +110,12 @@ def main():
         if cover:
             print(f'Cover taken from the original EPUB: {os.path.relpath(cover, d)}')
     toc_title = cfg.get('toc_title') or C.languages().get(lang, {}).get('toc_title', 'Contents')
-    base = ['pandoc', md, '-f', 'markdown', '--resource-path', d,
-            '--lua-filter', os.path.join(C.TEMPLATES, 'system.lua'),
+    raw = C.jload(os.path.join(d, 'project.json'), {}) or {}
+    boxes = raw.get('system_boxes')
+    if boxes is None:                 # boxed system messages are a game-fiction convention
+        boxes = raw.get('genre') in (None, 'gamelit')       # (None: projects made before genres)
+    base = ['pandoc', md, '-f', 'markdown', '--resource-path', d] \
+        + (['--lua-filter', os.path.join(C.TEMPLATES, 'system.lua')] if boxes else []) + [
             '-M', f'title={title}', '-M', f'lang={lang}', '--toc', '--toc-depth=2', '-M', f'toc-title={toc_title}']
     if author:
         base += ['-M', f'author={author}']
