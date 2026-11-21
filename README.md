@@ -57,7 +57,9 @@ Just talk to the agent. In Claude Code you can also type `/book-translate-lite �
 | *Translate it into German, title "Der Leuchtturm"* | the same, with the translated title |
 | *How is it going?* | progress, phase, where the book and the report are |
 | *Stop* / *Continue* | stops it, and later resumes it where it was |
+| *Translate volume 2, it's the same series as the first one* | starts with the first volume's glossary, rules and style |
 | *Always translate "Brass Warden" as "Custode d’Ottone"* | adds a fixed glossary term |
+| *"Brass Warden" was wrong: fix it in the parts already done* | changes the term and rewrites it where it was already translated |
 | *Show the glossary* | lists the terms (fixed or proposed) |
 | *Use Claude for the review* / *Review it again* | reruns the final review, then rebuilds the book |
 | *Make a PDF* / *Rebuild the book* | builds the formats again |
@@ -71,16 +73,30 @@ The agent uses one command, `btl`, and you can use it too:
 
 ```
 btl start BOOK --to LANG [--from LANG] [--title "…"] [--engine codex|claude] [--review-engine claude]
+          [--series PREV_JOB] [--workdir DIR]
+btl series [JOB] --from PREV_JOB [--retro]
 btl status [JOB]             btl stop [JOB]            btl resume [JOB]
 btl review [JOB] [--again] [--flagged] [--engine claude]
 btl build [JOB] [--formats epub,docx,pdf]
-btl terms list [TEXT] | add SOURCE TARGET [--proposed] | remove SOURCE
-btl config [KEY=VALUE …]     btl log [JOB]             btl jobs     btl doctor
+btl terms list [TEXT] | add SOURCE TARGET [--proposed] [--retro] | remove SOURCE
+btl config [JOB] [KEY=VALUE …]   btl log [JOB]         btl jobs     btl doctor
 btl next [JOB]               (in-chat mode: tells the agent which sub-agents to launch)
 btl import FOLDER            (projects started with translate-book or v1)
 ```
 
 `JOB` can be the book file, its `<book>_temp` folder, or part of the title. Without it, `btl` uses the current folder's job or the most recent one.
+
+## Series
+
+Volumes of the same series must share names and style. Start every later volume with `--series`:
+
+```
+btl start "Book 7.epub" --to it --series "Book 6"
+```
+
+The new job gets the previous volume's glossary (fixed and proposed terms), `rules.md` and house-style settings (quotes, replacements, forbidden forms, all-caps chat names, table-of-contents title, rights line, engines and review settings), and its folder is created next to the previous job. If you forget `--series` and another job by the same author exists, `btl start` says so and waits before starting.
+
+For a job that is already under way, `btl series JOB --from PREV --retro` merges the glossary and rewrites, in the parts already translated, every term that had been rendered differently. A term changed later can be rewritten the same way with `btl terms add "X" "Y" --retro`. The rewrite works paragraph by paragraph, only where the source paragraph contains the term; run `btl review --again` afterwards to fix gender and number agreement.
 
 ## What it does
 

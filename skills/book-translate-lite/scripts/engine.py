@@ -6,7 +6,26 @@ Engines:
   command → project.json "engine_command": any argv (stdin = task, stdout = answer)
 Binaries can be forced with the BTL_CODEX / BTL_CLAUDE environment variables.
 """
-import os, shutil, subprocess, tempfile
+import os, re, shutil, subprocess, tempfile
+
+# the engine cannot work until the user acts (credits, plan limits, login): stop at once, do not retry
+QUOTA = re.compile(r'out of credits|add credits|usage limit|limit reached|hit your .{0,20}limit|quota|'
+                   r'insufficient[_ ](?:quota|credit|funds)|billing|rate[_ ]limit|\b429\b|not logged in|'
+                   r'please (?:log|sign) in|authentication|unauthorized', re.I)
+
+
+class EngineBlocked(Exception):
+    """Raised by callers when an engine error needs the user (credits, limits, login)."""
+
+
+def blocked(err):
+    return bool(err) and bool(QUOTA.search(err))
+
+
+def hint(cfg):
+    other = 'claude' if cfg.get('engine') == 'codex' else 'codex'
+    alt = f'btl resume --engine {other}' if find(other) else 'btl next (in-chat mode)'
+    return f'Add credits / wait for the limit to reset, then btl resume — or switch: {alt}'
 
 CODEX = ['/Applications/Codex.app/Contents/Resources/codex',
          '/Applications/ChatGPT.app/Contents/Resources/codex-cli/bin/codex',

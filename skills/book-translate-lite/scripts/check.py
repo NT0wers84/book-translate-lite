@@ -41,6 +41,8 @@ def check(d, n, cfg, ts, fix=False):
             C.write(C.out_path(d, n), o2); o = o2
             warns.append(f'{k} mechanical fixes applied')
     if o.strip() == s.strip():
+        if C.nothing_to_translate(s, cfg):
+            return [], warns
         return ['identical to the source (not translated)'], warns
     ps, po = C.paragraphs(s), C.paragraphs(o)
     if len(ps) != len(po):
@@ -57,7 +59,7 @@ def check(d, n, cfg, ts, fix=False):
         for j, (x, y) in enumerate(zip(ps, po), 1):
             if len(x) > 80 and not (lo <= len(y) / len(x) <= hi):
                 probs.append(f'paragraph {j}: length translation/source {len(y)/len(x):.2f} → «{y[:50]}…»')
-            elif len(x) > 120 and x.strip() == y.strip():
+            elif len(x) > 120 and x.strip() == y.strip() and not C.nothing_to_translate(x, cfg):
                 probs.append(f'paragraph {j} not translated → «{y[:50]}…»')
     clean = re.sub(r'\{[^}]*\}|\]\([^)]*\)', '', o)
     for r in cfg['forbidden']:
@@ -72,13 +74,12 @@ def check(d, n, cfg, ts, fix=False):
         src, tgt = t['source'], t['target']
         if len(src) < 4 or src.lower() in tgt.lower():
             continue
-        if C.rx_term(src).search(o):
+        if C.rx_term(src).search(o) and not C.kept_name(src, o, s):
             probs.append(f'term left untranslated: «{src}» → «{tgt}»')
             continue
         if t.get('type') == 'fixed' and ' ' in src.strip():
             tc = re.sub(r'\s*\(.*?\)', '', tgt)
-            stem = tc.lower()[:max(4, len(tc) - 3)]
-            if stem not in ol and stem[:5] not in ol:
+            if not C.rendered(tc, ol):
                 warns.append(f'«{src}»: expected «{tc}» (fine if rendered differently for context)')
     mp = C.meta_path(d, n)
     if os.path.exists(mp):

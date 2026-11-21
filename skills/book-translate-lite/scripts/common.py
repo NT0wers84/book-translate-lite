@@ -166,6 +166,61 @@ def present(ts, text):
     return [t for t in ts if any(rx_term(f).search(text) for f in forms(t))]
 
 
+def bare(text):
+    """Text without Markdown, images, links, URLs and {attributes}: what a translator would translate."""
+    t = re.sub(r'!\[[^\]]*\]\([^)]*\)|\]\([^)]*\)|\{[^}]*\}|https?://\S+', ' ', text)
+    return re.sub(r'[*_#>\[\]|`~\\]', ' ', t).strip()
+
+
+def nothing_to_translate(text, cfg=None):
+    """True for parts/paragraphs that legitimately stay identical: only links/images/markup, or only the
+    author's name."""
+    b = ' '.join(bare(text).split())
+    if not re.search(r'[^\W\d_]', b):
+        return True
+    author = ' '.join(((cfg or {}).get('author') or '').split())
+    return bool(author) and b.lower() == author.lower()
+
+
+def rendered(target, text_lower):
+    """Is a glossary rendering present, allowing inflection (Signore/Signora, -o/-i/-a/-e)?
+    Every word of 4+ letters must appear by its stem (the word minus its last 2 letters)."""
+    tc = re.sub(r'\s*\(.*?\)', '', target).lower()
+    words = [w for w in re.findall(r'[^\W\d_]+', tc) if len(w) >= 4]
+    if not words:
+        return tc in text_lower if tc.strip() else True
+    return all(w[:max(3, len(w) - 2)] in text_lower for w in words)
+
+
+def generic(term):
+    """Single lowercase common words (phase, blob, outworlder): their translation depends on context, so
+    they are not checked for consistency."""
+    s = term['source']
+    return ' ' not in s.strip() and s[:1].islower()
+
+
+def kept_name(src, out, source):
+    """Is every occurrence of `src` in `out` part of a longer proper name kept as it is in the source
+    (Splash Zone, Dungeons and Dragons)?"""
+    tok = r"[A-Z][\w’'\-]*"
+    conn = r"(?:and|&|of|the|de|du|von|van)"
+    rx = re.compile(rf"(?:(?:{tok}|{conn})\s+)*" + re.escape(src) + rf"(?:\s+(?:{tok}|{conn}))*")
+    hits = list(rx_term(src).finditer(out))
+    if not hits:
+        return False
+    for m in hits:
+        ok = False
+        for big in rx.finditer(out):
+            if big.start() <= m.start() and big.end() >= m.end():
+                phrase = big.group(0).strip()
+                phrase = re.sub(rf"^(?:{conn}\s+)+|(?:\s+{conn})+$", '', phrase)
+                ok = phrase != src and len(phrase.split()) > len(src.split()) and phrase in source
+                break
+        if not ok:
+            return False
+    return True
+
+
 def groups(ids, g):
     """Runs of consecutive part numbers, at most g per group."""
     out = []

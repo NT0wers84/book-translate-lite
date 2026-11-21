@@ -1,7 +1,7 @@
 ---
 name: book-translate-lite
 description: Translates a whole book (EPUB/PDF/DOCX/MD) into any language from start to finish, with a final review and a ready EPUB/DOCX/PDF, using very few tokens. Use when the user wants to translate a book, check a translation's progress, stop/resume it, rerun the review, rebuild the book or edit its glossary.
-version: 2.1.0
+version: 2.3.0
 user-invocable: true
 argument-hint: "[translate <book> <lang> · status · stop · resume · review · build · terms · config · doctor]"
 license: MIT
@@ -27,7 +27,10 @@ Run it from anywhere. A job is found from a book path, its `<book>_temp` folder 
 | "continue", "resume" | `$BTL resume` |
 | "review it again", "use Claude for the review" | `$BTL review --again [--engine claude]` |
 | "rebuild the book", "make a PDF" | `$BTL build [--formats pdf]` |
+| "translate the next volume / book 7 of the series" | `$BTL start "<book>" --to <code> --series "<previous volume's job>"` |
+| "use the glossary of the previous book" (job already started) | `$BTL series [JOB] --from "<previous job>" --retro` |
 | "translate X as Y", "always call him …" | `$BTL terms add "X" "Y"` (add `--proposed` if the user is unsure) |
+| "change X to Y everywhere", "X was wrong in the parts already done" | `$BTL terms add "X" "Y" --retro` |
 | "show the glossary" | `$BTL terms list [text]` |
 | "set the title / engine / review…" | `$BTL config title="…"` · `engine=claude` · `review=flagged` |
 | "what's needed?", installation problems | `$BTL doctor` |
@@ -38,6 +41,8 @@ Rules for `start`:
 - The **target language is required**. If the user did not give it, ask; never guess.
 - Use the language code, for example `it`, `fr`, `de`, `es`, `pt` or `ja`.
 - Add `--from <code>` only if the book is not in English.
+- **Series:** if the book is a later volume of a series already translated with btl (check `$BTL jobs`), always pass `--series "<previous volume's job>"`: it carries the glossary, rules and style over and puts the new job next to the old one. If `start` prints "Other jobs by …", ask the user whether it is the same series before running `btl resume`.
+- If the run stops with "the engine cannot continue" (credits, usage limit, login), tell the user and offer the alternative it prints (other engine, or `$BTL next`).
 
 ## Automatic vs in-chat
 

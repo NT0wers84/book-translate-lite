@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.3.0 — 2026-11-21
+
+Lessons from translating volume 7 of a series that had been started without the previous volumes' glossary.
+
+- **Series:** `btl start … --series PREV_JOB` carries the previous volume's glossary, `rules.md` and house-style settings into the new job and creates it next to the previous one. Without `--series`, `btl start` warns when another job by the same author exists and does not start on its own.
+- **`btl series JOB --from PREV [--retro]`** for a job already under way: merges glossary, rules and style; `--retro` rewrites the renderings that differed in the parts already translated (paragraph by paragraph, only where the source paragraph has the term).
+- **`btl terms add … --retro`** rewrites a changed rendering in the parts already translated.
+- **`--workdir DIR`** (`btl start`, `init.py`): choose where `<book>_temp` is created; jobs are also found by their source book when they live elsewhere.
+- **Engine blocked:** out of credits, usage limits and login errors stop the run at once (no retries, no half-finished review followed by a build) with a hint: other engine or in-chat mode.
+- **Fewer false flags:** parts or paragraphs with only links/images or only the author's name are no longer "not translated"; a term inside a proper name kept as in the source (Splash Zone, Dungeons and Dragons) is not "left untranslated"; renderings are matched with inflection (Signore/Signora); single lowercase common words are not checked for consistency. On the real volume: parts with problems 72 → 4, final report flags 113 → 58, inconsistent terms 31 → 9.
+- `btl config` accepts the job as its first argument (`btl config JOB key=value`).
+- A review that stops (engine blocked, no progress) no longer goes on to build and mark the job FINISHED.
+- Tests `test_series`, `test_checks_and_blocked_engine`.
+
 ## 2.2.0 — 2026-11-20
 
 - **Title page:** new `subtitle` and `rights` settings in `project.json` (`btl config subtitle="…" rights="…"`); `btl config` also shows `toc_title`.

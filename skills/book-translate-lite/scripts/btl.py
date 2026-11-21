@@ -2,8 +2,13 @@
 """btl — one command for the whole book-translate-lite workflow.
 
   btl start BOOK --to LANG [--from LANG] [--title "…"] [--engine codex|claude] [--review-engine claude]
-                                         [--review full|flagged|none] [--chat] [--no-start]
-                                         set up the book and start translating until the book is done
+                                         [--review full|flagged|none] [--series PREV_JOB] [--workdir DIR]
+                                         [--chat] [--no-start]
+                                         set up the book and start translating until the book is done;
+                                         --series carries glossary, rules and style of a previous volume
+  btl series [JOB] --from PREV_JOB [--retro]
+                                         bring a previous volume's glossary/rules/style into a job already
+                                         started; --retro also rewrites renderings that differ
   btl status [JOB]                       progress of one job, or of every job
   btl next [JOB]                         in-chat mode: what to do now (prints sub-agent prompts)
   btl stop [JOB]                         stop the automatic run (it can be resumed)
@@ -13,8 +18,9 @@
   btl build [JOB] [--formats epub,docx,pdf] [--title "…"] [--partial]
   btl check [JOB]                        automatic checks on every translated part
   btl log [JOB] [-n 20]                  last lines of the automatic run log
-  btl config [--job JOB] [KEY=VALUE …]   show or change project settings (title, engine, review, …)
-  btl terms [--job JOB] list [TEXT] | add SOURCE TARGET [--proposed] [--note …] | remove SOURCE
+  btl config [JOB] [KEY=VALUE …]         show or change project settings (title, engine, review, …)
+  btl terms [--job JOB] list [TEXT] | add SOURCE TARGET [--proposed] [--note …] [--retro] | remove SOURCE
+                                         --retro rewrites the old rendering in parts already translated
   btl import FOLDER [--to LANG]          import a translate-book / v1 project
   btl jobs                               list known jobs
   btl doctor                             check that everything needed is installed
@@ -26,6 +32,7 @@ import argparse, json, os, shutil, signal, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
 import common as C
 import engine as EN
+import series as SE
 
 HOME = os.environ.get('BTL_HOME') or os.path.expanduser('~/.book-translate-lite')
 JOBS = os.path.join(HOME, 'jobs.json')
@@ -71,7 +78,14 @@ def project_of(path):
     path = os.path.abspath(os.path.expanduser(path))
     if os.path.isfile(path):
         d = os.path.join(os.path.dirname(path), os.path.splitext(os.path.basename(path))[0] + '_temp')
-        return d if os.path.exists(os.path.join(d, 'project.json')) else None
+        if os.path.exists(os.path.join(d, 'project.json')):
+            return d
+        for j in jobs():      # a job created with --workdir lives elsewhere: match on its source book
+            from build import source_path
+            src = source_path(j, C.project(j))
+            if src and os.path.abspath(src) == path:
+                return j
+        return None
     while path != os.path.dirname(path):
         if os.path.exists(os.path.join(path, 'project.json')):
             return path
@@ -181,17 +195,34 @@ def cmd_start(o):
         args += ['--title', o.title]
     if o.chunk_size:
         args += ['--chunk-size', o.chunk_size]
+    prev = resolve(o.series) if o.series else None
+    workdir = o.workdir or (os.path.dirname(prev) if prev else '')
+    if workdir:
+        args += ['--workdir', os.path.abspath(os.path.expanduser(workdir))]
     r = run('init.py', *args, capture=True)
     if r.returncode:
         die(r.stdout + r.stderr)
-    d = os.path.join(os.path.dirname(book), os.path.splitext(os.path.basename(book))[0] + '_temp')
+    d = next((l.split(':', 1)[1].strip() for l in r.stdout.splitlines() if l.startswith('Working folder:')),
+             os.path.join(os.path.dirname(book), os.path.splitext(os.path.basename(book))[0] + '_temp'))
+    print('\n'.join(l for l in r.stdout.strip().splitlines() if not l.startswith('Next (optional)')))
+    if prev:
+        info = SE.inherit(d, prev)
+        print(f'Series: {info["terms_prev"]} glossary terms, rules and style taken from {prev}')
     cfg = C.jload(os.path.join(d, 'project.json'), {})
     for k, v in (('engine', o.engine), ('review_engine', o.review_engine), ('review', o.review), ('model', o.model)):
         if v:
             cfg[k] = v
     C.jsave(os.path.join(d, 'project.json'), cfg)
     register(d)
-    print('\n'.join(l for l in r.stdout.strip().splitlines() if not l.startswith('Next (optional)')))
+    if not prev:
+        sib = SE.siblings(d, cfg.get('author'), jobs())
+        if sib:
+            print(f'\n! Other jobs by {cfg.get("author")}: ' + ', '.join(os.path.basename(s) for s in sib)
+                  + '\n  If this is the same series, bring their glossary and style in before translating:'
+                  f'\n  btl series "{d}" --from "{max(sib, key=touched)}"')
+            if not o.no_start:
+                print('  (not started automatically because of this: start with btl resume)')
+                o.no_start = True
     if o.no_start:
         print('\nReady. Optional: btl config title="Translated title" · btl terms add "Name" "Translation"\n'
               'Then: btl resume' + ('' if EN.available(C.project(d)) else '  (or btl next for the in-chat mode)'))
@@ -282,6 +313,8 @@ def cmd_log(o):
 
 
 def cmd_config(o):
+    if o.pairs and '=' not in o.pairs[0] and not o.job:
+        o.job = o.pairs.pop(0)
     d = resolve(o.job); p = os.path.join(d, 'project.json'); cfg = C.jload(p, {})
     if not o.pairs:
         keys = ('title', 'subtitle', 'author', 'rights', 'toc_title', 'source_lang', 'target_lang', 'engine', 'model', 'review', 'review_engine',
@@ -317,14 +350,41 @@ def cmd_terms(o):
         if len(o.args) != 2:
             die('Usage: btl terms add "Source" "Translation" [--proposed] [--note "…"]')
         src, tgt = o.args
+        before = next((t['target'] for t in ts if t['source'].lower() == src.lower()), None)
         ts = [t for t in ts if t['source'].lower() != src.lower()]
         ts.append({'source': src, 'target': tgt, 'type': 'proposed' if o.proposed else 'fixed',
                    'note': o.note or '', 'aliases': []})
-        C.jsave(p, ts); print(f'{"P" if o.proposed else "F"}  {src} → {tgt}'); return
+        C.jsave(p, ts); print(f'{"P" if o.proposed else "F"}  {src} → {tgt}')
+        if o.retro and before and before != tgt:
+            print(f'«{before}» → «{tgt}» in the parts already translated: {SE.retro(d, src, before, tgt)} replaced')
+        elif o.retro and not before:
+            print('No previous rendering to rewrite (the term was new).')
+        return
     if o.action == 'remove':
         src = ' '.join(o.args)
         left = [t for t in ts if t['source'].lower() != src.lower()]
         C.jsave(p, left); print(f'removed {len(ts) - len(left)} term(s)'); return
+
+
+def cmd_series(o):
+    d = resolve(o.job); prev = resolve(o.prev)
+    if os.path.abspath(prev) == os.path.abspath(d):
+        die('--from must be a different job (the previous volume).')
+    info = SE.inherit(d, prev, keep_rules=o.keep_rules)
+    print(f'Glossary: {info["terms_prev"]} terms from the previous volume + {info["terms_new"]} of this one.'
+          + ('' if o.keep_rules else ' Rules and style settings copied.'))
+    if not info['differ']:
+        print('No term was rendered differently.'); return
+    print(f'{len(info["differ"])} terms were rendered differently in this job:')
+    total = 0
+    for t, p in info['differ'][:400]:
+        k = SE.retro(d, t['source'], t['target'], p['target']) if o.retro else 0
+        total += k
+        print(f'  {t["source"]}: «{t["target"]}» → «{p["target"]}»' + (f'  ({k} replaced)' if o.retro else ''))
+    if o.retro:
+        print(f'{total} replacements. Check gender/number agreement in a review: btl review --again')
+    else:
+        print('Rewrite them in the parts already translated with: btl series --from … --retro')
 
 
 def cmd_import(o):
@@ -371,6 +431,9 @@ def main():
     s.add_argument('book'); s.add_argument('--to'); s.add_argument('--from', dest='src', default='en')
     s.add_argument('--title'); s.add_argument('--engine'); s.add_argument('--review-engine'); s.add_argument('--model')
     s.add_argument('--review', choices=['full', 'flagged', 'none']); s.add_argument('--chunk-size', type=int)
+    s.add_argument('--series', help='previous volume (job) whose glossary, rules and style to carry over')
+    s.add_argument('--workdir', help='folder that will contain <book>_temp (default: next to the book, '
+                   'or next to the --series job)')
     s.add_argument('--chat', action='store_true', help='use the in-chat mode even if a CLI engine exists')
     s.add_argument('--no-start', action='store_true', help='only set up; start later with btl resume')
     s.set_defaults(fn=cmd_start)
@@ -391,7 +454,11 @@ def main():
     p.add_argument('--job'); p.set_defaults(fn=cmd_config)
     p = sub.add_parser('terms', help='glossary'); p.add_argument('action', choices=['list', 'add', 'remove'])
     p.add_argument('args', nargs='*'); p.add_argument('--job'); p.add_argument('--proposed', action='store_true')
-    p.add_argument('--note'); p.set_defaults(fn=cmd_terms)
+    p.add_argument('--note'); p.add_argument('--retro', action='store_true'); p.set_defaults(fn=cmd_terms)
+    p = sub.add_parser('series', help='carry glossary/rules/style over from a previous volume')
+    p.add_argument('job', nargs='?'); p.add_argument('--from', dest='prev', required=True)
+    p.add_argument('--retro', action='store_true'); p.add_argument('--keep-rules', action='store_true')
+    p.set_defaults(fn=cmd_series)
     p = sub.add_parser('import', help='import a translate-book or v1 project'); p.add_argument('folder')
     p.add_argument('--to'); p.set_defaults(fn=cmd_import)
     sub.add_parser('jobs', help='list jobs').set_defaults(fn=cmd_jobs)

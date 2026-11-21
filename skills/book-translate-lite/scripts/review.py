@@ -49,7 +49,9 @@ def analyze(d, say=print):
         s = C.read(C.src_path(d, n)); o = C.read(C.out_path(d, n)); ol = o.lower()
         for t in C.present(ts, s):
             tc = re.sub(r'\s*\(.*?\)', '', t['target'])
-            if t['source'].lower() not in tc.lower() and len(tc) > 3 and tc.lower()[:max(4, len(tc) - 3)] not in ol:
+            if C.generic(t):
+                continue
+            if t['source'].lower() not in tc.lower() and len(tc) > 3 and not C.rendered(tc, ol):
                 missing_term[t['source']] += 1
         text = re.sub(r'\{[^}]*\}|\]\([^)]*\)|`[^`]*`', '', o)
         pars = C.paragraphs(text)
@@ -77,7 +79,7 @@ def analyze(d, say=print):
         tc = re.sub(r'\s*\(.*?\)', '', by_src[src]['target'])
         for n in range(1, tot + 1):
             if C.translated(d, n) and rx.search(C.read(C.src_path(d, n))):
-                if tc.lower()[:max(4, len(tc) - 3)] not in C.read(C.out_path(d, n)).lower():
+                if not C.rendered(tc, C.read(C.out_path(d, n)).lower()):
                     flags[f'{n:04d}'].append(f'«{src}» not rendered as «{tc}» (glossary {C.letter(by_src[src])}): '
                                              'check consistency')
     flags = {k: list(dict.fromkeys(v)) for k, v in flags.items() if v}

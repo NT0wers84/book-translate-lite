@@ -9,6 +9,10 @@
 - migrate.py converts a v1 (Italian file names) project
 - btl: the user-facing command, start → background run → status FINISHED, terms, config, stop/resume
 - build: title page (subtitle, rights), cover taken from the original EPUB, doubled scene breaks collapsed
+- series: --series carries glossary/rules/style into the next volume (and its folder), the same-author hint,
+  btl series --retro and btl terms add --retro rewrite renderings in parts already translated
+- checks: link-only/author-only parts are not "untranslated", kept proper names, inflected renderings,
+  generic words; an engine out of credits stops the run at once with a hint
 """
 import glob, hashlib, json, os, re, subprocess, sys, tempfile, unittest, zipfile
 
@@ -238,6 +242,87 @@ class Test(unittest.TestCase):
             self.assertIn('Series, volume 2', allx)
             self.assertIn('Personal use only.', allx)
             self.assertIn('cover-image', rd_opf(os.path.join(d, 'book', 'Il Faro a Orologeria.epub')))
+
+    def test_series(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {'BTL_HOME': os.path.join(tmp, 'home')}
+            d1 = new_project(os.path.join(tmp, 'series'))          # volume 1, in series/
+            p = jl(os.path.join(d1, 'project.json'))
+            p.update({'author': 'Test Author', 'forbidden': [{'re': 'Okay', 'msg': 'Ok'}], 'uppercase_chat': ['Gull'],
+                      'rights': 'Personal use only.', 'toc_title': 'Sommario'})
+            jw(os.path.join(d1, 'project.json'), p)
+            wr(os.path.join(d1, 'rules.md'), '## Series rules\n\n- house style of the series\n')
+            run(['btl.py', 'import', d1], tmp, env=env)                  # register volume 1
+            b2 = os.path.join(tmp, 'eng', 'Volume Two.epub'); os.makedirs(os.path.dirname(b2))
+            os.replace(make(os.path.join(tmp, 'mk')), b2)
+            r = run(['btl.py', 'start', b2, '--to', 'it', '--chunk-size', '400', '--series', d1, '--no-start'],
+                    tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            d2 = os.path.join(tmp, 'series', 'Volume Two_temp')       # next to volume 1, not next to the book
+            self.assertTrue(os.path.exists(os.path.join(d2, 'project.json')), r.stdout)
+            self.assertIn('Series:', r.stdout)
+            p2 = jl(os.path.join(d2, 'project.json'))
+            self.assertEqual((p2['forbidden'], p2['uppercase_chat'], p2['rights'], p2['toc_title']),
+                             (p['forbidden'], ['Gull'], 'Personal use only.', 'Sommario'))
+            self.assertIn('house style of the series', rd(os.path.join(d2, 'rules.md')))
+            self.assertIn('Custode d’Ottone', [x['target'] for x in jl(os.path.join(d2, 'terms.json'))])
+            self.assertIn('Volume Two', run(['btl.py', 'status', b2], tmp, env=env).stdout)   # found by its book
+            # a job started without --series by the same author gets the hint and is not started
+            b3 = os.path.join(tmp, 'other', 'Volume Three.epub'); os.makedirs(os.path.dirname(b3))
+            os.replace(make(os.path.join(tmp, 'mk')), b3)
+            r = run(['btl.py', 'start', b3, '--to', 'it', '--chunk-size', '400'], tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn('Other jobs by Test Author', r.stdout)
+            self.assertIn('not started automatically', r.stdout)
+            d3 = os.path.join(tmp, 'other', 'Volume Three_temp')
+            r = run(['btl.py', 'config', d3, 'review=flagged'], tmp, env=env)          # job as positional arg
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertEqual(jl(os.path.join(d3, 'project.json'))['review'], 'flagged')
+            # volume 3 used other renderings: btl series --retro aligns them in the translated parts
+            jw(os.path.join(d3, 'terms.json'), [{'source': 'Brass Warden', 'target': 'Guardiano di Bronzo',
+                                                'type': 'proposed', 'note': '', 'aliases': []}])
+            parts = sorted(glob.glob(os.path.join(d3, 'chunk[0-9]*.md')))
+            for f in parts:
+                wr(os.path.join(d3, 'output_' + os.path.basename(f)),
+                   rd(f).replace('Brass Warden', 'Guardiano di Bronzo').replace('Copper Gull', 'Gabbiano di Rame'))
+            hit = next(f for f in parts if 'Brass Warden' in rd(f))
+            out = os.path.join(d3, 'output_' + os.path.basename(hit))
+            r = run(['btl.py', 'series', d3, '--from', d1, '--retro'], tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+            self.assertIn('«Guardiano di Bronzo» → «Custode d’Ottone»', r.stdout)
+            self.assertNotIn('Guardiano di Bronzo', rd(out)); self.assertIn('Custode d’Ottone', rd(out))
+            # a term changed later: --retro rewrites it in the parts already translated
+            gull = next(f for f in parts if 'Copper Gull' in rd(f))
+            r = run(['btl.py', 'terms', 'add', 'Copper Gull', 'Gabbiano Ramato', '--retro', '--job', d3], tmp, env=env)
+            self.assertIn('replaced', r.stdout, r.stdout + r.stderr)
+            self.assertIn('Gabbiano Ramato', rd(os.path.join(d3, 'output_' + os.path.basename(gull))))
+
+    def test_checks_and_blocked_engine(self):
+        sys.path.insert(0, S)
+        import common as C, engine as EN
+        self.assertTrue(C.nothing_to_translate('[![Facebook icon](images/f.jpg){.c}](https://x.y)'))
+        self.assertTrue(C.nothing_to_translate('## MATT DINNIMAN', {'author': 'Matt Dinniman'}))
+        self.assertFalse(C.nothing_to_translate('## CHAPTER ONE', {'author': 'Matt Dinniman'}))
+        self.assertTrue(C.rendered('Signore della Guerra', 'la signora della guerra parlò'))
+        self.assertFalse(C.rendered('Signore della Guerra', 'il capo parlò'))
+        self.assertTrue(C.kept_name('Splash', 'Il prossimo è Splash Zone.', 'Next is Splash Zone.'))
+        self.assertTrue(C.kept_name('Dragons', 'come in Dungeons and Dragons', 'like in Dungeons and Dragons'))
+        self.assertFalse(C.kept_name('Splash', 'Splash attaccò.', 'Splash attacked.'))
+        self.assertTrue(C.generic({'source': 'phase'})); self.assertFalse(C.generic({'source': 'Brass Warden'}))
+        self.assertTrue(EN.blocked('ERROR: Your workspace is out of credits. Add credits to continue.'))
+        self.assertTrue(EN.blocked("You've hit your 5-hour limit"))
+        self.assertFalse(EN.blocked('codex: timed out (20 min)'))
+        with tempfile.TemporaryDirectory() as tmp:
+            d = new_project(tmp)
+            p = jl(os.path.join(d, 'project.json'))
+            p['engine_command'] = [PY, '-c', 'import sys; sys.stderr.write("ERROR: Your workspace is out of '
+                                   'credits. Add credits to continue."); sys.exit(1)']
+            jw(os.path.join(d, 'project.json'), p)
+            r = run(['auto.py'], d)
+            self.assertIn('STOP: the engine cannot continue', r.stdout, r.stdout + r.stderr)
+            self.assertIn('btl', r.stdout)
+            self.assertLessEqual(r.stdout.count('engine error'), p['parallel'])   # one round, no retries
+            self.assertNotIn('no progress in two rounds', r.stdout)
 
     def test_migrate_v1(self):
         with tempfile.TemporaryDirectory() as tmp:

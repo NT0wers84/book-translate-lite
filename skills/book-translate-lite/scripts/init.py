@@ -2,10 +2,10 @@
 """Set up a book: conversion into Markdown parts + project files.
 
 Usage:  init.py book.epub --to it [--from en] [--chunk-size 6000] [--group 3]
-                [--title "Translated title"] [--author "…"]
+                [--title "Translated title"] [--author "…"] [--workdir DIR]
         (.pdf, .docx and .md work too; `--to` is any language code, see templates/languages.json)
 
-Creates <book>_temp/ next to the book with: chunkNNNN.md, project.json (typography from the
+Creates <book>_temp/ next to the book (or inside --workdir) with: chunkNNNN.md, project.json (typography from the
 language profile), rules.md (from templates/rules/<lang>.md or generic.md), an empty
 terms.json, candidates.json (recurring names) and state.json.
 Never overwrites an existing rules.md, terms.json or state.json.
@@ -78,11 +78,13 @@ def main():
     ap.add_argument('--from', dest='src', default='en', help='source language code (default en)')
     ap.add_argument('--chunk-size', type=int, default=6000); ap.add_argument('--group', type=int, default=3)
     ap.add_argument('--title', default=''); ap.add_argument('--author', default='')
+    ap.add_argument('--workdir', default='', help='folder that will contain <book>_temp (default: next to the book)')
     o = ap.parse_args()
     book = os.path.abspath(o.book)
     if not os.path.exists(book):
         sys.exit(f'ERROR: {book} does not exist')
-    root = os.path.dirname(book)
+    root = os.path.abspath(os.path.expanduser(o.workdir)) if o.workdir else os.path.dirname(book)
+    os.makedirs(root, exist_ok=True)
     stem = os.path.splitext(os.path.basename(book))[0]
     d = os.path.join(root, f'{stem}_temp')
     if not glob.glob(os.path.join(d, 'chunk0001.md')):

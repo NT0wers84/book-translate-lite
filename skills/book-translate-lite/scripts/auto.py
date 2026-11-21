@@ -43,6 +43,8 @@ def translate_group(d, ids, cfg, ts, rules, log):
         os.remove(path)
         if err:
             log(f'  {ids[0]:04d}-{ids[-1]:04d}: engine error: {err}')
+            if EN.blocked(err):
+                raise EN.EngineBlocked(err)
             problems = None
             continue
         saved, probs, errors = W.save_blocks(d, answer, cfg, ts, expected=ids, all_or_nothing=False)
@@ -67,8 +69,12 @@ def translation_phase(d, cfg, until, log):
         batch = C.groups(missing[:g * par], g)
         ts = C.terms(d); rules = C.rules(d)
         t0 = time.time()
-        with CF.ThreadPoolExecutor(par) as ex:
-            res = list(ex.map(lambda ids: translate_group(d, ids, cfg, ts, rules, log), batch))
+        try:
+            with CF.ThreadPoolExecutor(par) as ex:
+                res = list(ex.map(lambda ids: translate_group(d, ids, cfg, ts, rules, log), batch))
+        except EN.EngineBlocked as e:
+            log(f'STOP: the engine cannot continue ({str(e)[:120]}). {EN.hint(cfg)}')
+            return False
         flagged = {n: p for r in res for n, p in r.items()}
         W.close(d, [n for gr in batch for n in gr], C.state(d), flagged=flagged, say=log)
         log(f'{batch[0][0]:04d}-{batch[-1][-1]:04d} in {int(time.time() - t0)} s · ' + W.status_line(d))
@@ -86,7 +92,10 @@ def review_group(d, ids, cfg, ts, rules, flags, log):
         answer, err = EN.call(cfg, C.read(path), d, review=True)
         os.remove(path)
         if err:
-            log(f'  review {ids[0]:04d}-{ids[-1]:04d}: engine error: {err}'); continue
+            log(f'  review {ids[0]:04d}-{ids[-1]:04d}: engine error: {err}')
+            if EN.blocked(err):
+                raise EN.EngineBlocked(err)
+            continue
         ok, rejected, seen = W.apply_patches(d, answer, cfg, ts)
         if seen:
             for n, m in rejected[:5]:
@@ -98,17 +107,22 @@ def review_group(d, ids, cfg, ts, rules, flags, log):
 
 def review_phase(d, cfg, log):
     if cfg['review'] == 'none':
-        return
+        return True
     flags = R.analyze(d, log)
     stalled = 0
     while True:
         ids = R.todo(d)
         if not ids:
-            return
+            return True
         batch = C.groups(ids, cfg['review_group_size'])[:cfg['parallel']]
         ts = C.terms(d); rules = C.rules(d)
-        with CF.ThreadPoolExecutor(cfg['parallel']) as ex:
-            res = list(ex.map(lambda g: review_group(d, g, cfg, ts, rules, flags, log), batch))
+        try:
+            with CF.ThreadPoolExecutor(cfg['parallel']) as ex:
+                res = list(ex.map(lambda g: review_group(d, g, cfg, ts, rules, flags, log), batch))
+        except EN.EngineBlocked as e:
+            log(f'STOP review: the engine cannot continue ({str(e)[:120]}). '
+                + EN.hint(dict(cfg, engine=cfg.get('review_engine') or cfg['engine'])))
+            return False
         st = C.state(d)
         seen = [n for v, _ in res for n in v]
         st['reviewed'] = sorted(set(st['reviewed']) | set(seen)); C.save_state(d, st)
@@ -116,7 +130,7 @@ def review_phase(d, cfg, log):
             f'reviewed {len(st["reviewed"])}, to do {len(R.todo(d))}')
         stalled = 0 if seen else stalled + 1
         if stalled >= 2:
-            log('STOP review: no progress in two rounds. Run auto.py again to resume.'); return
+            log('STOP review: no progress in two rounds. Run auto.py again to resume.'); return False
 
 
 def alive(pid):
@@ -171,7 +185,8 @@ def main():
         log(f'Stopped at part {until:04d} as requested.'); return
     if cfg['review'] != 'none' and not EN.available(cfg, review=True):
         sys.exit(f'ERROR: review engine "{cfg["review_engine"]}" not available.')
-    review_phase(d, cfg, log)
+    if review_phase(d, cfg, log) is False:
+        return
     if o.no_build:
         R.analyze(d, log); log('Translation and review complete (build skipped).'); return
     R.final(d, log)
