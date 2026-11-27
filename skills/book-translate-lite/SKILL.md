@@ -1,7 +1,7 @@
 ---
 name: book-translate-lite
 description: Translates a whole book (EPUB/PDF/DOCX/MD) into any language from start to finish, with a final review and a ready EPUB/DOCX/PDF, using very few tokens. Use when the user wants to translate a book, check a translation's progress, stop/resume it, rerun the review, rebuild the book or edit its glossary.
-version: 2.3.0
+version: 2.3.1
 user-invocable: true
 argument-hint: "[translate <book> <lang> · status · stop · resume · review · build · terms · config · doctor]"
 license: MIT

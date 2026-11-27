@@ -14,6 +14,7 @@
 - genres: --genre picks the genre section of rules.md, btl genre swaps it
 - checks: link-only/author-only parts are not "untranslated", kept proper names, inflected renderings,
   generic words; an engine out of credits stops the run at once with a hint
+- EPUB emphasis set only through CSS classes (bold/italic spans and paragraphs) survives the conversion
 """
 import glob, hashlib, json, os, re, subprocess, sys, tempfile, unittest, zipfile
 
@@ -348,6 +349,37 @@ class Test(unittest.TestCase):
             self.assertIn('btl', r.stdout)
             self.assertLessEqual(r.stdout.count('engine error'), p['parallel'])   # one round, no retries
             self.assertNotIn('no progress in two rounds', r.stdout)
+
+    def test_css_emphasis(self):
+        sys.path.insert(0, os.path.join(S, 'vendor'))
+        import epub_emphasis as E
+        css = ('/* x */ .sys{font-weight:800} .it{font-style:italic} p.both{font: italic bold 1em serif}'
+               ' .norm{font-weight:normal} .box{font-style:italic} h2.t{font-weight:bold}')
+        html = ('<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html><body>'
+                '<h2 class="t">Title</h2><p class="sys">System <b>says</b> hi &amp; bye</p>'
+                '<p>Plain <span class="it">word</span> and <span style="font-weight:bold">loud</span>.</p>'
+                '<div class="box"><p>Inside box</p></div><p class="both">Both</p><p class="norm">N</p><br/>'
+                '</body></html>')
+        out, b, i = E.restyle_html(html, E.class_styles(css))
+        self.assertIn('<h2 class="t">Title</h2>', out)
+        self.assertIn('<p class="sys"><strong>System says hi &amp; bye</strong></p>', out)
+        self.assertIn('<span class="it"><em>word</em></span>', out)
+        self.assertIn('<span style="font-weight:bold"><strong>loud</strong></span>', out)
+        self.assertIn('<div class="box"><p><em>Inside box</em></p></div>', out)
+        self.assertIn('<p class="both"><strong><em>Both</em></strong></p>', out)
+        self.assertIn('<p class="norm">N</p>', out)
+        self.assertEqual((b, i), (3, 3))
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = os.path.join(tmp, 'a.epub'), os.path.join(tmp, 'b.epub')
+            with zipfile.ZipFile(src, 'w') as z:
+                z.writestr('mimetype', 'application/epub+zip', compress_type=zipfile.ZIP_STORED)
+                z.writestr('OEBPS/s.css', css)
+                z.writestr('OEBPS/c.xhtml', html)
+            self.assertEqual(E.restyle_epub(src, dst), (3, 3))
+            with zipfile.ZipFile(dst) as z:
+                self.assertEqual(z.namelist()[0], 'mimetype')
+                self.assertEqual(z.getinfo('mimetype').compress_type, zipfile.ZIP_STORED)
+                self.assertIn('<strong>System says', z.read('OEBPS/c.xhtml').decode())
 
     def test_migrate_v1(self):
         with tempfile.TemporaryDirectory() as tmp:

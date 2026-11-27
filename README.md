@@ -106,7 +106,7 @@ book.epub ─▶ parts ─▶ translation in groups ─▶ checks ─▶ review 
                       (engine, in parallel)    (scripts)  (engine)    + FINAL_REPORT.md
 ```
 
-1. **Setup.** Calibre converts the book to Markdown, split into parts of about 6,000 characters, and recurring names are collected as glossary candidates.
+1. **Setup.** Calibre converts the book to Markdown (bold and italics set through the EPUB's CSS are kept), split into parts of about 6,000 characters, and recurring names are collected as glossary candidates.
 2. **Translation.** Groups of 3 parts are translated in parallel. Every answer is checked: paragraphs, bold and italics, images, headings, glossary terms, forbidden forms. Rejected parts are retranslated with the list of errors. New names proposed by the model go into the glossary.
 3. **Review.** The whole book is scanned:
    - terms rendered differently in different parts;

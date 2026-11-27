@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.3.1 — 2026-11-27
+
+- **EPUB emphasis kept:** bold and italics that an EPUB sets only through CSS classes or `style=""` (system messages, chats, thoughts, titles of works…) used to vanish, because pandoc ignores CSS. The conversion now first writes a copy of the EPUB where those elements get real `<strong>`/`<em>` (headings untouched, container styles passed down to their paragraphs, no nested emphasis). On a real 317-part novel: 0 → 3,041 paragraphs with emphasis, matching a manual reconstruction.
+- Test `test_css_emphasis`.
+
 ## 2.3.0 — 2026-11-21
 
 Lessons from a long series translation; everything is generic and applies to any kind of book.

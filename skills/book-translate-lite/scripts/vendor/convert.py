@@ -26,6 +26,7 @@ import re
 import urllib.parse
 
 from manifest import create_manifest, file_hash
+from epub_emphasis import restyle_epub
 
 
 def find_calibre_convert():
@@ -1573,7 +1574,18 @@ def main():
             # <book>.htmlz, which Calibre would overwrite and we would delete.
             htmlz_name = os.path.splitext(os.path.basename(input_file))[0] + ".htmlz"
             htmlz_file = os.path.join(extract_dir, htmlz_name)
-            if not convert_to_htmlz(input_file, htmlz_file, calibre_path):
+            calibre_input = input_file
+            if file_ext == '.epub':
+                # Bold/italics set through CSS classes would be lost: pandoc ignores CSS.
+                styled = os.path.join(extract_dir, 'styled_' + os.path.basename(input_file))
+                try:
+                    nb, ni = restyle_epub(input_file, styled)
+                    if nb or ni:
+                        calibre_input = styled
+                        print(f"Kept CSS-styled emphasis: {nb} bold, {ni} italic elements")
+                except Exception as e:  # a damaged EPUB still converts, without this step
+                    print(f"Warning: could not read the EPUB's CSS emphasis ({e})")
+            if not convert_to_htmlz(calibre_input, htmlz_file, calibre_path):
                 sys.exit(1)
 
             html_file, images_dir = extract_htmlz(htmlz_file, extract_dir)
