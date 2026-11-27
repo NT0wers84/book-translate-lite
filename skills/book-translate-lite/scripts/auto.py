@@ -133,6 +133,21 @@ def review_phase(d, cfg, log):
             log('STOP review: no progress in two rounds. Run auto.py again to resume.'); return False
 
 
+def heartbeat(d):
+    """Touch auto.heartbeat every 30 s, so status works where processes cannot be probed (sandboxes)."""
+    import threading
+    hb = os.path.join(d, 'auto.heartbeat')
+
+    def beat():
+        while True:
+            try:
+                C.write(hb, time.strftime('%Y-%m-%d %H:%M:%S'))
+            except OSError:
+                pass
+            time.sleep(30)
+    threading.Thread(target=beat, daemon=True).start()
+
+
 def alive(pid):
     try:
         os.kill(pid, 0); return pid > 0
@@ -170,6 +185,7 @@ def main():
             pr = subprocess.Popen(cmd, stdout=out, stderr=out, stdin=subprocess.DEVNULL, start_new_session=True, cwd=d)
         print(f'Started in the background (pid {pr.pid}). Status: auto.py --status · log: {log.p}'); return
     C.write(os.path.join(d, 'auto.pid'), str(os.getpid()))
+    heartbeat(d)
     for k, v in {'engine': o.engine, 'model': o.model, 'parallel': o.parallel, 'review': o.review,
                  'review_engine': o.review_engine, 'review_model': o.review_model}.items():
         if v:

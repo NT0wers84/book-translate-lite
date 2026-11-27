@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.3.2 — 2026-11-28
+
+Works inside agent sandboxes (Codex).
+
+- `btl` no longer crashes when it cannot write its job registry (`~/.book-translate-lite`, outside the sandbox): jobs are also found by looking up to 3 levels below the current folder.
+- `btl status` no longer reports "stopped" for a running job when the sandbox forbids probing processes. The run writes `auto.heartbeat` every 30 s, which `btl status` uses instead.
+- `start`, `resume`, `review` and `stop` detect the Codex sandbox and exit with code 3 and a clear instruction to rerun them with escalated permissions. They no longer half-start a run that cannot reach the engine.
+- New `btl wait [--minutes N]`: one quiet call that returns when the book is finished or the run stops. The skill tells agents to use it instead of polling `status` every minute.
+- Test `test_sandbox`.
+
 ## 2.3.1 — 2026-11-27
 
 - **EPUB emphasis kept:** bold and italics that an EPUB sets only through CSS classes or `style=""` (system messages, chats, thoughts, titles of works…) used to vanish, because pandoc ignores CSS. The conversion now first writes a copy of the EPUB where those elements get real `<strong>`/`<em>` (headings untouched, container styles passed down to their paragraphs, no nested emphasis). On a real 317-part novel: 0 → 3,041 paragraphs with emphasis, matching a manual reconstruction.

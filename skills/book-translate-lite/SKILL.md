@@ -1,7 +1,7 @@
 ---
 name: book-translate-lite
 description: Translates a whole book (EPUB/PDF/DOCX/MD) into any language from start to finish, with a final review and a ready EPUB/DOCX/PDF, using very few tokens. Use when the user wants to translate a book, check a translation's progress, stop/resume it, rerun the review, rebuild the book or edit its glossary.
-version: 2.3.1
+version: 2.3.2
 user-invocable: true
 argument-hint: "[translate <book> <lang> · status · stop · resume · review · build · terms · config · doctor]"
 license: MIT
@@ -15,7 +15,13 @@ Everything goes through one command:
 BTL="python3 <folder of this SKILL.md>/scripts/btl.py"
 ```
 
-Run it from anywhere. A job is found from a book path, its `<book>_temp` folder or part of its title; without one, the most recent job is used. The output of `btl` is short and written for the user: relay it in one or two sentences, in the user's language.
+There is no `btl` on the PATH: always call it with the full `python3 …/btl.py` path above. Run it from anywhere. A job is found from a book path, its `<book>_temp` folder or part of its title; without one, the most recent job is used. The output of `btl` is short and written for the user: relay it in one or two sentences, in the user's language.
+
+**Sandboxed agents (Codex):**
+
+- `start`, `resume`, `review` and `stop` launch or stop the engine in the background, so they must run **outside the sandbox**. Run them with escalated permissions (`sandbox_permissions: "require_escalated"`) and propose the prefix rule `["python3", "<…>/scripts/btl.py"]` so the user approves btl once.
+- If `btl` exits with code 3, it is telling you exactly this.
+- `status`, `wait`, `log`, `jobs`, `terms` and `config` work inside the sandbox.
 
 ## What the user asks → what you run
 
@@ -49,7 +55,9 @@ Rules for `start`:
 
 ## Automatic vs in-chat
 
-- `start` and `resume` run the job **in the background** with the `codex` or `claude` CLI. The job continues on its own until the book and its report are ready, and you do not need to stay in the conversation. Tell the user they can ask for `status` at any time.
+- `start` and `resume` run the job **in the background** with the `codex` or `claude` CLI. The job continues on its own until the book and its report are ready, and you do not need to stay in the conversation. Tell the user they can ask for `status` at any time, and end your turn.
+- **Do not poll** `status` in a loop and do not run `resume` while `status` says "running": every check costs tokens, and the job does not need you.
+- If the user wants you to stay until the end (for example a goal like "translate it to the end"), run `$BTL wait --minutes 120`. It is one quiet call that returns when the book is finished or the run stopped. If it is still running, call it again. If it stopped, run `$BTL resume` once and report what `status` says.
 - If `btl` says that no CLI engine is available, or the user asks to do it here (`start … --chat`), use the in-chat mode. Repeat these steps until `$BTL next` prints `FINISHED`:
   1. Run `$BTL next`.
   2. If it prints "LAUNCH NOW", start **all** the listed sub-agents **in one call**, each with its exact prompt and nothing else, and wait for them **in one wait**.

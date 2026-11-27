@@ -1,6 +1,6 @@
 {
   "name": "book-translate-lite",
-  "version": "2.3.1",
+  "version": "2.3.2",
   "description": "Translate a whole book (EPUB/PDF/DOCX) into any language, end to end, with a final review and EPUB/DOCX/PDF output, using very few tokens.",
   "author": {"name": "NT0wers84", "url": "https://github.com/NT0wers84"},
   "homepage": "https://github.com/NT0wers84/book-translate-lite",

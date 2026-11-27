@@ -11,6 +11,7 @@
                                          bring a previous volume's glossary/rules/style into a job already
                                          started; --retro also rewrites renderings that differ
   btl status [JOB]                       progress of one job, or of every job
+  btl wait [JOB] [--minutes 60]          wait quietly until it finishes, then print the status once
   btl next [JOB]                         in-chat mode: what to do now (prints sub-agent prompts)
   btl stop [JOB]                         stop the automatic run (it can be resumed)
   btl resume [JOB] [--engine …]          resume the automatic run where it stopped
@@ -59,17 +60,46 @@ def die(msg, code=1):
 # ------------------------------------------------------------------ jobs registry
 
 def jobs():
-    js = C.jload(JOBS, {}) or {}
+    """Known jobs: the registry in BTL_HOME plus any project found up to 3 levels below the current folder
+    (so btl also works where the registry cannot be written, e.g. inside an agent sandbox)."""
+    js = {}
+    try:
+        js = C.jload(JOBS, {}) or {}
+    except (OSError, ValueError):
+        pass
+    js = {os.path.realpath(d): v for d, v in js.items()}
+    import glob
+    for pat in ('*', '*/*', '*/*/*'):
+        for pj in glob.glob(os.path.join(os.getcwd(), pat, 'project.json')):
+            d = os.path.realpath(os.path.dirname(pj))
+            js.setdefault(d, {'title': C.project(d).get('title', '')})
     return {d: v for d, v in js.items() if os.path.exists(os.path.join(d, 'project.json'))}
 
 
 def register(d):
-    os.makedirs(HOME, exist_ok=True)
-    js = C.jload(JOBS, {}) or {}
-    cfg = C.project(d)
-    js[d] = {'title': cfg.get('title', ''), 'to': cfg.get('target_lang', ''), 'added': js.get(d, {}).get(
-        'added', time.strftime('%Y-%m-%d %H:%M'))}
-    C.jsave(JOBS, js)
+    try:
+        os.makedirs(HOME, exist_ok=True)
+        js = C.jload(JOBS, {}) or {}
+        cfg = C.project(d)
+        js[d] = {'title': cfg.get('title', ''), 'to': cfg.get('target_lang', ''), 'added': js.get(d, {}).get(
+            'added', time.strftime('%Y-%m-%d %H:%M'))}
+        C.jsave(JOBS, js)
+    except OSError:
+        pass        # registry not writable (sandbox): jobs are still found from the current folder
+
+
+def sandboxed():
+    """True inside an agent sandbox that cannot start the engine (Codex sets CODEX_SANDBOX)."""
+    return bool(os.environ.get('CODEX_SANDBOX') or os.environ.get('CODEX_SANDBOX_NETWORK_DISABLED'))
+
+
+def need_unsandboxed(what):
+    if sandboxed():
+        die(f'`btl {what}` must run OUTSIDE the agent sandbox: it starts the translation engine in the '
+            'background, which needs network access and the engine\'s own settings.\n'
+            'Agent: rerun this exact command with escalated permissions (Codex: sandbox_permissions='
+            '"require_escalated", and propose the prefix rule ["python3", "' + os.path.realpath(__file__)
+            + '"] so the user approves btl once). status, log, terms and config work inside the sandbox.', 3)
 
 
 def touched(d):
@@ -118,15 +148,34 @@ def resolve(target=None):
 
 # ------------------------------------------------------------------ status
 
+def heartbeat_age(d):
+    ages = [time.time() - os.path.getmtime(os.path.join(d, f)) for f in ('auto.heartbeat', 'auto.log', 'state.json')
+            if os.path.exists(os.path.join(d, f))]
+    return min(ages) if ages else None
+
+
 def pid_alive(d):
     p = os.path.join(d, 'auto.pid')
     if not os.path.exists(p):
         return None
     try:
         pid = int(C.read(p).strip() or 0)
+    except ValueError:
+        return None
+    if pid <= 0:
+        return None
+    try:
         os.kill(pid, 0)
         return pid
-    except (ValueError, OSError):
+    except ProcessLookupError:
+        return None
+    except PermissionError:
+        # a sandbox may forbid even probing processes: trust the run's heartbeat instead
+        hb = os.path.join(d, 'auto.heartbeat')
+        limit = 180 if os.path.exists(hb) else 900
+        age = heartbeat_age(d)
+        return pid if age is not None and age < limit else None
+    except OSError:
         return None
 
 
@@ -184,6 +233,8 @@ def start_auto(d, extra=()):
 
 
 def cmd_start(o):
+    if not o.no_start and not o.chat:
+        need_unsandboxed('start')
     book = os.path.abspath(os.path.expanduser(o.book))
     if not os.path.exists(book):
         die(f'Book not found: {book}')
@@ -249,6 +300,19 @@ def cmd_status(o):
         print(summary(d, verbose=len(js) == 1)); print()
 
 
+def cmd_wait(o):
+    """Block quietly until the job finishes, stops, or the time is up; then print its status once."""
+    d = resolve(o.job); end = time.time() + o.minutes * 60
+    while time.time() < end:
+        st = C.state(d)
+        if st.get('finished') or not pid_alive(d):
+            break
+        time.sleep(30)
+    print(summary(d))
+    if not C.state(d).get('finished') and pid_alive(d):
+        print(f'  (still running after {o.minutes} min: run btl wait again, or just ask for btl status later)')
+
+
 def cmd_next(o):
     run('step.py', '--dir', resolve(o.job))
 
@@ -257,6 +321,7 @@ def cmd_stop(o):
     d = resolve(o.job); pid = pid_alive(d)
     if not pid:
         print('Not running.'); return
+    need_unsandboxed('stop')
     try:
         os.killpg(os.getpgid(pid), signal.SIGTERM)
     except OSError:
@@ -278,11 +343,13 @@ def cmd_resume(o):
     d = resolve(o.job)
     if pid_alive(d):
         print('Already running.'); print(summary(d)); return
+    need_unsandboxed('resume')
     start_auto(d, passthrough(o))
 
 
 def cmd_review(o):
     d = resolve(o.job)
+    need_unsandboxed('review')
     if C.next_missing(d):
         die('The translation is not finished yet: the review starts by itself at the end. See: btl status')
     cfg = C.jload(os.path.join(d, 'project.json'), {})
@@ -460,6 +527,8 @@ def main():
     for name, fn, hlp in (('status', cmd_status, 'progress'), ('next', cmd_next, 'in-chat mode: next action'),
                           ('stop', cmd_stop, 'stop the automatic run'), ('check', cmd_check, 'run the checks')):
         p = sub.add_parser(name, help=hlp); p.add_argument('job', nargs='?'); p.set_defaults(fn=fn)
+    p = sub.add_parser('wait', help='wait quietly until the job finishes (or --minutes pass)')
+    p.add_argument('job', nargs='?'); p.add_argument('--minutes', type=int, default=60); p.set_defaults(fn=cmd_wait)
     p = sub.add_parser('resume', help='resume the automatic run'); p.add_argument('job', nargs='?')
     p.add_argument('--engine'); p.add_argument('--review-engine'); p.add_argument('--model'); p.set_defaults(fn=cmd_resume)
     p = sub.add_parser('review', help='run or rerun the final review'); p.add_argument('job', nargs='?')

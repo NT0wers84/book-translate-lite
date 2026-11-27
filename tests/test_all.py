@@ -175,6 +175,43 @@ class Test(unittest.TestCase):
             self.assertEqual(jl(os.path.join(d, 'terms.json'))[0]['type'], 'fixed')
             self.assertEqual(run(['check.py', '--all'], d).returncode, 0)
 
+    def test_sandbox(self):
+        """Inside an agent sandbox (Codex): registry not writable, engine cannot start, processes not probeable."""
+        import time
+        with tempfile.TemporaryDirectory() as tmp:
+            home = os.path.join(tmp, 'home'); os.makedirs(home); os.chmod(home, 0o500)   # read-only registry
+            env = {'BTL_HOME': home, 'CODEX_SANDBOX': 'seatbelt'}
+            book = make(tmp)
+            r = run(['btl.py', 'start', book, '--to', 'it', '--chunk-size', '400'], tmp, env=env)
+            self.assertEqual(r.returncode, 3, r.stdout + r.stderr)                    # must run outside the sandbox
+            self.assertIn('require_escalated', r.stderr)
+            self.assertFalse(os.path.exists(os.path.join(tmp, 'The Clockwork Lighthouse_temp')))   # nothing half-done
+            r = run(['btl.py', 'start', book, '--to', 'it', '--chunk-size', '400', '--no-start'], tmp, env=env)
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)                    # setup alone works, no traceback
+            r = run(['btl.py', 'status'], tmp, env=env)                                 # found without the registry
+            self.assertIn('Clockwork', r.stdout, r.stdout + r.stderr)
+            self.assertEqual(run(['btl.py', 'resume'], tmp, env=env).returncode, 3)
+            os.chmod(home, 0o700)
+            sys.path.insert(0, S)
+            import btl
+            d = os.path.join(tmp, 'The Clockwork Lighthouse_temp')
+            wr(os.path.join(d, 'auto.pid'), str(os.getpid()))
+
+            def denied(*a):
+                raise PermissionError(1, 'Operation not permitted')
+            real = os.kill
+            try:
+                os.kill = denied
+                wr(os.path.join(d, 'auto.heartbeat'), 'now')
+                self.assertTrue(btl.pid_alive(d))                                       # fresh heartbeat: running
+                old = time.time() - 600
+                for f in ('auto.heartbeat', 'state.json', 'auto.log'):
+                    if os.path.exists(os.path.join(d, f)):
+                        os.utime(os.path.join(d, f), (old, old))
+                self.assertIsNone(btl.pid_alive(d))                                     # stale: stopped
+            finally:
+                os.kill = real
+
     def test_btl(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {'BTL_HOME': os.path.join(tmp, 'home')}
